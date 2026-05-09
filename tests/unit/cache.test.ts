@@ -39,32 +39,26 @@ describe("cache storage", () => {
     });
   });
 
-  it("supports project-scoped sessions and runtime-context cache keys", () => {
+  it("supports project-scoped sessions and assistant-thread cache keys", () => {
     writeCacheValue("sessions:ws-1:p-1", [{ id: "session-1" }], "2026-05-06T12:00:00.000Z");
-    writeCacheValue(
-      "runtime-context:ws-1:p-1",
-      { project_id: "p-1", onboarding_completed: true },
-      "2026-05-06T12:00:00.000Z",
-    );
+    writeCacheValue("assistant-thread", { thread: { id: "thread-1" }, messages: [] }, "2026-05-06T12:00:00.000Z");
 
     expect(readCacheValue<Array<{ id: string }>>("sessions:ws-1:p-1")).toMatchObject({
       data: [{ id: "session-1" }],
       fetchedAt: "2026-05-06T12:00:00.000Z",
     });
-    expect(readCacheValue<{ project_id: string; onboarding_completed: boolean }>("runtime-context:ws-1:p-1")).toMatchObject(
-      {
-        data: { project_id: "p-1", onboarding_completed: true },
-        fetchedAt: "2026-05-06T12:00:00.000Z",
-      },
-    );
+    expect(readCacheValue<{ thread: { id: string }; messages: [] }>("assistant-thread")).toMatchObject({
+      data: { thread: { id: "thread-1" }, messages: [] },
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+    });
   });
 
-  it("invalidates project-scoped runtime-context entries cleanly", () => {
-    writeCacheValue("runtime-context:ws-1:p-1", { project_id: "p-1", onboarding_completed: false });
+  it("invalidates assistant-thread entries cleanly", () => {
+    writeCacheValue("assistant-thread", { thread: { id: "thread-1" }, messages: [] });
 
-    invalidateCacheValue("runtime-context:ws-1:p-1");
+    invalidateCacheValue("assistant-thread");
 
-    expect(readCacheValue("runtime-context:ws-1:p-1")).toBeNull();
+    expect(readCacheValue("assistant-thread")).toBeNull();
   });
 
   it("ignores invalid cache payloads", () => {

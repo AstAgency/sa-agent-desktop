@@ -22,14 +22,14 @@ export function EmptyProjects({ language, workspaceName, onCreateProject }: Empt
     try {
       await onCreateProject(value);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Project creation failed.");
+      setErrorMessage(error instanceof Error ? error.message : translate(language, "app.error.projectCreationFailed"));
     } finally {
       setIsCreating(false);
     }
   };
 
   return (
-    <section aria-label="No projects yet" style={panelStyle}>
+    <section aria-label={translate(language, "emptyProjects.title")} style={panelStyle}>
       <p style={eyebrowStyle}>{workspaceName}</p>
       <h1 style={titleStyle}>{translate(language, "emptyProjects.title")}</h1>
       <p style={bodyStyle}>{translate(language, "emptyProjects.description")}</p>

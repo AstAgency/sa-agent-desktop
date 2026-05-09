@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DebugStateSnapshot } from "../lib/debug";
+import type { DebugAgentRuntimeEntry, DebugStateSnapshot } from "../lib/debug";
 import { translate } from "../lib/i18n";
 import type { AppLanguage, DebugNetworkEntry, ThemeMode } from "../lib/types";
 
@@ -77,8 +77,8 @@ export function SettingsPanel({
   };
 
   return (
-    <div aria-label="Settings overlay" style={overlayStyle}>
-      <section aria-label="Application settings" style={panelStyle}>
+    <div aria-label={translate(language, "settings.title")} style={overlayStyle}>
+      <section aria-label={translate(language, "settings.title")} style={panelStyle}>
         <div style={headerStyle}>
           <div style={titleBlockStyle}>
             <p style={eyebrowStyle}>{translate(language, "app.name")}</p>
@@ -96,7 +96,7 @@ export function SettingsPanel({
               Русский
             </button>
             <button type="button" onClick={() => void onLanguageChange("en")} style={languageButtonStyle(language === "en")}>
-              English
+              {language === "ru" ? "Английский" : "English"}
             </button>
           </div>
         </div>
@@ -132,7 +132,7 @@ export function SettingsPanel({
           <label style={fieldStyle}>
             <span style={sectionLabelStyle}>{translate(language, "settings.label.apiBaseUrl")}</span>
             <input
-              aria-label="API base URL"
+              aria-label={translate(language, "settings.label.apiBaseUrl")}
               value={draftApiBaseUrl}
               onChange={(event) => setDraftApiBaseUrl(event.target.value)}
               placeholder="http://127.0.0.1:3000"
@@ -184,11 +184,85 @@ export function SettingsPanel({
                   : translate(language, "settings.debug.empty")}
               </pre>
             </div>
+            <div style={debugSectionStyle}>
+              <p style={sectionLabelStyle}>{translate(language, "settings.debug.trace")}</p>
+              <div data-testid="settings-debug-trace" style={traceListStyle}>
+                {debugStateSnapshot?.agentRuntime?.length
+                  ? debugStateSnapshot.agentRuntime.map((entry) => (
+                    <article key={entry.id} style={traceItemStyle}>
+                      <div style={traceItemHeaderStyle}>
+                        <strong style={traceItemTypeStyle}>{entry.type}</strong>
+                        <span style={traceItemTimeStyle}>{formatTraceTimestamp(entry.startedAt)}</span>
+                      </div>
+                      <div style={traceItemMetaStyle}>
+                        {entry.sessionId ? <span>session: {entry.sessionId}</span> : null}
+                        {formatTraceDetails(entry.data)}
+                      </div>
+                    </article>
+                  ))
+                  : <p style={bodyTextStyle}>{translate(language, "settings.debug.empty")}</p>}
+              </div>
+            </div>
+            <div style={debugSectionStyle}>
+              <p style={sectionLabelStyle}>{translate(language, "settings.debug.agentRuntime")}</p>
+              <pre style={debugPreStyle}>
+                {debugStateSnapshot?.agentRuntime?.length
+                  ? JSON.stringify(debugStateSnapshot.agentRuntime, null, 2)
+                  : translate(language, "settings.debug.empty")}
+              </pre>
+            </div>
           </div>
         ) : null}
       </section>
     </div>
   );
+}
+
+function formatTraceTimestamp(startedAt: string) {
+  const date = new Date(startedAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return startedAt;
+  }
+
+  return date.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatTraceDetails(data: DebugAgentRuntimeEntry["data"]) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+
+  const pairs = Object.entries(data)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${formatTraceValue(value)}`);
+
+  if (pairs.length === 0) {
+    return null;
+  }
+
+  return <span>{pairs.join(" · ")}</span>;
+}
+
+function formatTraceValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => formatTraceValue(item)).join(", ");
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 const overlayStyle = {
@@ -250,6 +324,49 @@ const sectionStyle = {
 const debugSectionStyle = {
   display: "grid",
   gap: "var(--theme-spacing-xs)",
+};
+
+const traceListStyle = {
+  display: "grid",
+  gap: "8px",
+};
+
+const traceItemStyle = {
+  display: "grid",
+  gap: "4px",
+  padding: "10px 12px",
+  borderRadius: "var(--theme-radius-medium)",
+  background: "var(--theme-color-panel-muted)",
+  border: "1px solid var(--theme-color-border-secondary)",
+};
+
+const traceItemHeaderStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "8px",
+  alignItems: "center",
+};
+
+const traceItemTypeStyle = {
+  fontSize: "12px",
+  lineHeight: 1.4,
+  color: "var(--theme-color-text-primary)",
+};
+
+const traceItemTimeStyle = {
+  fontSize: "11px",
+  lineHeight: 1.4,
+  color: "var(--theme-color-text-muted)",
+};
+
+const traceItemMetaStyle = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: "8px",
+  fontFamily: "var(--theme-font-mono)",
+  fontSize: "11px",
+  lineHeight: 1.5,
+  color: "var(--theme-color-text-secondary)",
 };
 
 const sectionLabelStyle = {

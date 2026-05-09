@@ -23,7 +23,7 @@ export function ErrorScreen({
   onSecondaryAction,
 }: ErrorScreenProps) {
   return (
-    <section aria-label="Application error" style={panelStyle}>
+    <section aria-label={title} style={panelStyle}>
       <div style={headerStyle}>
         <p style={eyebrowStyle}>{translate(language, "app.name")}</p>
         <span style={badgeStyle}>{translate(language, "error.recoverable")}</span>

@@ -2,6 +2,7 @@ import { readAllCacheValuesDebug, type DebugCacheEntry } from "./cache";
 import type { BootstrapSnapshot, DebugNetworkEntry, PersistedAppState } from "./types";
 
 const networkLog: DebugNetworkEntry[] = [];
+const agentRuntimeLog: DebugAgentRuntimeEntry[] = [];
 const maxEntries = 80;
 
 export function recordDebugNetworkEntry(entry: DebugNetworkEntry) {
@@ -16,6 +17,26 @@ export function getDebugNetworkEntries() {
   return [...networkLog];
 }
 
+export type DebugAgentRuntimeEntry = {
+  id: string;
+  startedAt: string;
+  type: string;
+  sessionId?: string | null;
+  data?: unknown;
+};
+
+export function recordDebugAgentRuntimeEntry(entry: DebugAgentRuntimeEntry) {
+  agentRuntimeLog.unshift(entry);
+
+  if (agentRuntimeLog.length > maxEntries) {
+    agentRuntimeLog.length = maxEntries;
+  }
+}
+
+export function getDebugAgentRuntimeEntries() {
+  return [...agentRuntimeLog];
+}
+
 export function getDebugStateSnapshot(input: {
   appState: PersistedAppState | null;
   bootstrapSnapshot: BootstrapSnapshot | null;
@@ -25,6 +46,7 @@ export function getDebugStateSnapshot(input: {
     bootstrapSnapshot: input.bootstrapSnapshot,
     localStorageAppState: readLocalStorageAppState(),
     entityCache: readAllCacheValuesDebug(),
+    agentRuntime: getDebugAgentRuntimeEntries(),
   };
 }
 
@@ -51,4 +73,5 @@ export type DebugStateSnapshot = {
   bootstrapSnapshot: BootstrapSnapshot | null;
   localStorageAppState: PersistedAppState | null;
   entityCache: DebugCacheEntry[];
+  agentRuntime: DebugAgentRuntimeEntry[];
 };

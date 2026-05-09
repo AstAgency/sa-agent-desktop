@@ -10,7 +10,7 @@ export function LanguageSetup({ language, onSelectLanguage }: LanguageSetupProps
   const activeLanguage = language ?? "en";
 
   return (
-    <section aria-label="Language selection" style={panelStyle}>
+    <section aria-label={translate(activeLanguage, "languageSetup.title")} style={panelStyle}>
       <p style={eyebrowStyle}>{translate(activeLanguage, "app.name")}</p>
       <h1 style={titleStyle}>{translate(activeLanguage, "languageSetup.title")}</h1>
       <p style={bodyStyle}>{translate(activeLanguage, "languageSetup.description")}</p>
@@ -19,7 +19,7 @@ export function LanguageSetup({ language, onSelectLanguage }: LanguageSetupProps
           Русский
         </button>
         <button type="button" onClick={() => onSelectLanguage("en")} style={buttonStyle(language === "en")}>
-          English
+          {activeLanguage === "ru" ? "Английский" : "English"}
         </button>
       </div>
       {language ? (
@@ -27,7 +27,7 @@ export function LanguageSetup({ language, onSelectLanguage }: LanguageSetupProps
           {translate(language, language === "ru" ? "languageSetup.selected.ru" : "languageSetup.selected.en")}
         </p>
       ) : null}
-      <div style={ctaStyle}>{translate(activeLanguage, "languageSetup.cta")}</div>
+      {/*<div style={ctaStyle}>{translate(activeLanguage, "languageSetup.cta")}</div>*/}
     </section>
   );
 }

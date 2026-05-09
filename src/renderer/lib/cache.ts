@@ -14,12 +14,14 @@ export type DebugCacheEntry = {
 
 export type CacheKey =
   | "me"
+  | "me-bootstrap"
+  | "agents"
+  | "agent-profiles"
+  | "assistant-thread"
   | "workspaces"
   | `projects:${string}`
   | `sessions:${string}:global`
-  | `sessions:${string}:${string}`
-  | `runtime-context:${string}:global`
-  | `runtime-context:${string}:${string}`;
+  | `sessions:${string}:${string}`;
 
 const cacheGenerations = new Map<CacheKey, number>();
 

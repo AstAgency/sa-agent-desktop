@@ -9,7 +9,7 @@ type BootstrapScreenProps = {
 
 export function BootstrapScreen({ language = "en", stageLabel, description }: BootstrapScreenProps) {
   return (
-    <section aria-label="Bootstrapping application" style={panelStyle}>
+    <section aria-label={translate(language, "bootstrap.badge")} style={panelStyle}>
       <div style={headerStyle}>
         <p style={eyebrowStyle}>{translate(language, "app.name")}</p>
         <span style={badgeStyle}>{translate(language, "bootstrap.badge")}</span>

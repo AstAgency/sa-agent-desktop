@@ -8,7 +8,7 @@ type AuthGateProps = {
 
 export function AuthGate({ language, onContinue }: AuthGateProps) {
   return (
-    <section aria-label="Authentication" style={panelStyle}>
+    <section aria-label={translate(language, "auth.title")} style={panelStyle}>
       <p style={eyebrowStyle}>{translate(language, "app.name")}</p>
       <h1 style={titleStyle}>{translate(language, "auth.title")}</h1>
       <p style={bodyStyle}>{translate(language, "auth.description")}</p>

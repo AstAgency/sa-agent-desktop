@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthGate } from "./components/AuthGate";
 import { BootstrapScreen } from "./components/BootstrapScreen";
 import { EmptyProjects } from "./components/EmptyProjects";
@@ -20,6 +20,7 @@ import type {
   BootstrapStage,
   CreateProjectInput,
   PersistedAppState,
+  WorkspaceMode,
 } from "./lib/types";
 import { defaultAppState } from "./state/app-state";
 import { bootstrapApp, decideInitialScreen, runBootstrapFlow } from "./state/bootstrap";
@@ -75,10 +76,45 @@ export default function App() {
       },
       forceRefresh: bootstrapAttempt > 0,
       preferredProjectId: appState.activeProjectId ?? null,
+      preferredAgentKey: appState.selectedAgentKey ?? null,
     })
       .then(({ screen: nextScreen, snapshot, errorKind }) => {
         if (!isActive) {
           return;
+        }
+
+        if (snapshot?.selectedAgentKey && snapshot.selectedAgentKey !== (appState.selectedAgentKey ?? null)) {
+          void updateStoredAppState({ selectedAgentKey: snapshot.selectedAgentKey })
+            .then((nextAppState) => {
+              if (isActive) {
+                setAppState(nextAppState);
+              }
+            })
+            .catch(() => {
+              if (isActive) {
+                setAppState((current) => ({
+                  ...(current ?? defaultAppState),
+                  selectedAgentKey: snapshot.selectedAgentKey,
+                }));
+              }
+            });
+        }
+
+        if (snapshot?.selectedWorkspace.id && snapshot.selectedWorkspace.id !== (appState?.activeWorkspaceId ?? null)) {
+          void updateStoredAppState({ activeWorkspaceId: snapshot.selectedWorkspace.id })
+            .then((nextAppState) => {
+              if (isActive) {
+                setAppState(nextAppState);
+              }
+            })
+            .catch(() => {
+              if (isActive) {
+                setAppState((current) => ({
+                  ...(current ?? defaultAppState),
+                  activeWorkspaceId: snapshot.selectedWorkspace.id,
+                }));
+              }
+            });
         }
 
         setBootstrapSnapshot(snapshot);
@@ -100,7 +136,7 @@ export default function App() {
     return () => {
       isActive = false;
     };
-  }, [appState?.activeProjectId, appState?.isAuthenticated, bootstrapAttempt, screen]);
+  }, [appState?.activeProjectId, appState?.isAuthenticated, appState?.selectedAgentKey, bootstrapAttempt, screen]);
 
   useEffect(() => {
     document.documentElement.lang = appState?.language ?? "en";
@@ -214,8 +250,70 @@ export default function App() {
     setScreen("bootstrapping");
   };
 
+  const refreshWorkspaceSnapshot = async (options?: {
+    preserveThreadMode?: boolean;
+  }) => {
+    const preferredProjectId = appState?.activeProjectId ?? bootstrapSnapshot?.selectedProject?.id ?? null;
+    const preferredAgentKey = appState?.selectedAgentKey ?? bootstrapSnapshot?.selectedAgentKey ?? null;
+    const result = await runBootstrapFlow({
+      forceRefresh: true,
+      preferredProjectId,
+      preferredAgentKey,
+    });
+
+    if (result.snapshot?.selectedAgentKey && result.snapshot.selectedAgentKey !== (appState?.selectedAgentKey ?? null)) {
+      try {
+        const nextAppState = await updateStoredAppState({
+          selectedAgentKey: result.snapshot.selectedAgentKey,
+          ...(options?.preserveThreadMode ? { workspaceMode: "thread" as const } : {}),
+        });
+        setAppState(nextAppState);
+      } catch {
+        setAppState((current) => ({
+          ...(current ?? defaultAppState),
+          selectedAgentKey: result.snapshot?.selectedAgentKey ?? null,
+          ...(options?.preserveThreadMode ? { workspaceMode: "thread" as const } : {}),
+        }));
+      }
+    } else if (options?.preserveThreadMode) {
+      try {
+        const nextAppState = await updateStoredAppState({ workspaceMode: "thread" });
+        setAppState(nextAppState);
+      } catch {
+        setAppState((current) => ({
+          ...(current ?? defaultAppState),
+          workspaceMode: "thread",
+        }));
+      }
+    }
+
+    setBootstrapSnapshot(result.snapshot);
+    setBootstrapErrorKind(result.errorKind ?? "request-failed");
+    setBootstrapErrorMessage(null);
+    setScreen(result.screen);
+  };
+
   const completeUserOnboarding = () => {
     invalidateCacheValue("me");
+    invalidateCacheValue("me-bootstrap");
+    invalidateCacheValue("assistant-thread");
+    void refreshWorkspaceSnapshot({ preserveThreadMode: true }).catch((error) => {
+      setBootstrapErrorKind("request-failed");
+      setBootstrapErrorMessage(error instanceof Error ? error.message : "Unknown bootstrap error.");
+      setScreen("bootstrap-error");
+    });
+  };
+
+  const refreshWorkspaceFromAssistantMutation = () => {
+    const workspaceId = bootstrapSnapshot?.selectedWorkspace.id ?? null;
+
+    invalidateCacheValue("me");
+    invalidateCacheValue("me-bootstrap");
+    invalidateCacheValue("assistant-thread");
+    if (workspaceId) {
+      invalidateCacheValue(`projects:${workspaceId}`);
+    }
+
     setBootstrapSnapshot(null);
     setBootstrapAttempt((current) => current + 1);
     setScreen("bootstrapping");
@@ -225,15 +323,15 @@ export default function App() {
     const workspaceId = bootstrapSnapshot?.selectedWorkspace.id;
 
     if (!workspaceId) {
-      throw new Error("Workspace context is unavailable.");
+      throw new Error(translate(activeLanguage, "app.error.workspaceUnavailable"));
     }
 
     const createdProject = await createWorkspaceProject(workspaceId, input);
     const nextAppState = await updateStoredAppState({ activeProjectId: createdProject.id });
     setAppState(nextAppState);
+    invalidateCacheValue("me-bootstrap");
     invalidateCacheValue(`projects:${workspaceId}`);
     invalidateCacheValue(`sessions:${workspaceId}:${createdProject.id}`);
-    invalidateCacheValue(`runtime-context:${workspaceId}:${createdProject.id}`);
     setBootstrapSnapshot(null);
     setBootstrapAttempt((current) => current + 1);
     setScreen("bootstrapping");
@@ -243,25 +341,35 @@ export default function App() {
     const selectedProject = bootstrapSnapshot?.selectedProject;
 
     if (!selectedProject) {
-      throw new Error("Project context is unavailable.");
+      throw new Error(translate(activeLanguage, "app.error.projectUnavailable"));
     }
 
     invalidateCacheValue(`projects:${selectedProject.workspace_id}`);
-    invalidateCacheValue(`runtime-context:${selectedProject.workspace_id}:${selectedProject.id}`);
     invalidateCacheValue(`sessions:${selectedProject.workspace_id}:${selectedProject.id}`);
-    setBootstrapSnapshot(null);
-    setBootstrapAttempt((current) => current + 1);
-    setScreen("bootstrapping");
+    invalidateCacheValue("me-bootstrap");
+    void refreshWorkspaceSnapshot({ preserveThreadMode: true }).catch((error) => {
+      setBootstrapErrorKind("request-failed");
+      setBootstrapErrorMessage(error instanceof Error ? error.message : "Unknown bootstrap error.");
+      setScreen("bootstrap-error");
+    });
   };
 
   const selectProject = async (projectId: string | null) => {
     try {
-      const nextAppState = await updateStoredAppState({ activeProjectId: projectId });
+      const nextAppState = await updateStoredAppState({
+        activeProjectId: projectId,
+        activeProjectAgentId: null,
+        activeSessionId: null,
+        activeThreadId: null,
+      });
       setAppState(nextAppState);
     } catch {
       setAppState((current) => ({
         ...(current ?? defaultAppState),
         activeProjectId: projectId,
+        activeProjectAgentId: null,
+        activeSessionId: null,
+        activeThreadId: null,
       }));
     }
 
@@ -284,6 +392,30 @@ export default function App() {
       ...bootstrapSnapshot,
       selectedProject: nextSelectedProject,
     });
+  };
+
+  const selectAgent = async (agentKey: string | null) => {
+    try {
+      const nextAppState = await updateStoredAppState({
+        selectedAgentKey: agentKey,
+        activeProjectAgentId: null,
+        activeSessionId: null,
+        activeThreadId: null,
+      });
+      setAppState(nextAppState);
+    } catch {
+      setAppState((current) => ({
+        ...(current ?? defaultAppState),
+        selectedAgentKey: agentKey,
+        activeProjectAgentId: null,
+        activeSessionId: null,
+        activeThreadId: null,
+      }));
+    }
+
+    setBootstrapSnapshot(null);
+    setBootstrapAttempt((current) => current + 1);
+    setScreen("bootstrapping");
   };
 
   const updateApiBaseUrl = async (apiBaseUrl: string) => {
@@ -333,12 +465,60 @@ export default function App() {
     if (!window.saAgent?.devtools?.open) {
       return {
         ok: false,
-        error: "DevTools bridge is unavailable in the current renderer process.",
+        error: translate(activeLanguage, "app.error.devtoolsUnavailable"),
       };
     }
 
     return window.saAgent.devtools.open();
   };
+
+  const selectWorkspaceMode = async (workspaceMode: WorkspaceMode) => {
+    try {
+      const nextAppState = await updateStoredAppState({ workspaceMode });
+      setAppState(nextAppState);
+    } catch {
+      setAppState((current) => ({
+        ...(current ?? defaultAppState),
+        workspaceMode,
+      }));
+    }
+  };
+
+  const handleActiveProjectAgentChange = useCallback(async (projectAgentId: string | null) => {
+    try {
+      const nextAppState = await updateStoredAppState({ activeProjectAgentId: projectAgentId });
+      setAppState(nextAppState);
+    } catch {
+      setAppState((current) => ({
+        ...(current ?? defaultAppState),
+        activeProjectAgentId: projectAgentId,
+      }));
+    }
+  }, []);
+
+  const handleActiveSessionChange = useCallback(async (sessionId: string | null) => {
+    try {
+      const nextAppState = await updateStoredAppState({ activeSessionId: sessionId });
+      setAppState(nextAppState);
+    } catch {
+      setAppState((current) => ({
+        ...(current ?? defaultAppState),
+        activeSessionId: sessionId,
+      }));
+    }
+  }, []);
+
+  const handleActiveThreadChange = useCallback(async (threadId: string | null) => {
+    try {
+      const nextAppState = await updateStoredAppState({ activeThreadId: threadId });
+      setAppState(nextAppState);
+    } catch {
+      setAppState((current) => ({
+        ...(current ?? defaultAppState),
+        activeThreadId: threadId,
+      }));
+    }
+  }, []);
 
   let content;
 
@@ -411,36 +591,50 @@ export default function App() {
       <WorkspaceShell
         language={activeLanguage}
         workspace={bootstrapSnapshot.selectedWorkspace}
+        agents={bootstrapSnapshot.agents}
+        selectedAgentKey={bootstrapSnapshot.selectedAgentKey}
         profile={bootstrapSnapshot.profile}
         project={bootstrapSnapshot.selectedProject}
         projects={bootstrapSnapshot.projects}
         globalSessions={bootstrapSnapshot.globalSessions}
-        globalRuntimeContext={bootstrapSnapshot.globalRuntimeContext}
+        globalAssistantMessages={bootstrapSnapshot.globalAssistantMessages}
         projectSessions={bootstrapSnapshot.projectSessions}
-        projectRuntimeContext={bootstrapSnapshot.projectRuntimeContext}
         onboarding={onboarding}
+        initialWorkspaceMode={appState.workspaceMode ?? "home"}
+        initialActiveProjectAgentId={appState.activeProjectAgentId ?? null}
+        onWorkspaceModeChange={selectWorkspaceMode}
+        onActiveProjectAgentChange={handleActiveProjectAgentChange}
+        onActiveSessionChange={handleActiveSessionChange}
+        onActiveThreadChange={handleActiveThreadChange}
+        onSelectAgent={selectAgent}
         onSelectProject={selectProject}
         onCreateProject={createProject}
+        onRefreshWorkspace={refreshWorkspaceFromAssistantMutation}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
     );
   } else {
     content = (
-      <section aria-label="Project bootstrap pending" style={panelStyle}>
+      <section aria-label={translate(activeLanguage, "app.projectBootstrapPending.title")} style={panelStyle}>
         <p style={eyebrowStyle}>{bootstrapSnapshot?.selectedWorkspace.name ?? "SA-Agent Desktop"}</p>
-        <h1 style={titleStyle}>Project bootstrap pending</h1>
-        <p style={bodyStyle}>A project is available, but the shell could not resolve the expected project state.</p>
+        <h1 style={titleStyle}>{translate(activeLanguage, "app.projectBootstrapPending.title")}</h1>
+        <p style={bodyStyle}>{translate(activeLanguage, "app.projectBootstrapPending.description")}</p>
       </section>
     );
   }
+
+  const isWorkspaceShellScreen = screen === "workspace-shell";
 
   return (
     <main
       style={{
         minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
+        width: "100vw",
+        height: "100vh",
+        display: isWorkspaceShellScreen ? "block" : "grid",
+        placeItems: isWorkspaceShellScreen ? undefined : "center",
         margin: 0,
+        overflow: "hidden",
         background:
           "radial-gradient(circle at top, var(--theme-color-app-bg-glow), transparent 32%), linear-gradient(180deg, var(--theme-color-app-bg-start), var(--theme-color-app-bg-middle) 58%, var(--theme-color-app-bg-end))",
         color: "var(--theme-color-text-primary)",
@@ -450,7 +644,7 @@ export default function App() {
     >
       {content}
       {appState?.language && screen !== "bootstrap-error" && screen !== "workspace-shell" ? (
-        <button type="button" aria-label="Open settings" onClick={() => setIsSettingsOpen(true)} style={settingsLauncherStyle}>
+        <button type="button" aria-label={translate(activeLanguage, "settings.open")} onClick={() => setIsSettingsOpen(true)} style={settingsLauncherStyle}>
           {translate(activeLanguage, "settings.open")}
         </button>
       ) : null}
