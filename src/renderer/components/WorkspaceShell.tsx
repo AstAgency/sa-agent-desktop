@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { WorkspaceShellProps } from "./workspace-shell/types";
 import { useConversationFlow } from "./workspace-shell/useConversationFlow";
 import { useRuntimeResources } from "./workspace-shell/useRuntimeResources";
@@ -11,13 +11,14 @@ import { WorkspaceShellFrame } from "./workspace-shell/WorkspaceShellFrame";
 import { useWorkspaceShellState } from "./workspace-shell/useWorkspaceShellState";
 
 export function WorkspaceShell(props: WorkspaceShellProps) {
+  const handleSessionCatalogError = useCallback(() => undefined, []);
   const sessionCatalog = useSessionCatalog({
     workspaceId: props.workspace.id,
     projects: props.projects,
     selectedProjectId: props.project?.id ?? null,
     initialGlobalSessions: props.globalSessions,
     initialProjectSessions: props.projectSessions,
-    onError: () => undefined,
+    onError: handleSessionCatalogError,
   });
   const state = useWorkspaceShellState({
     ...props,
