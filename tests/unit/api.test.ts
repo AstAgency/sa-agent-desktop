@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelExecution,
   dismissCommitment,
-  getAssistantState,
-  getAssistantThread,
   getDocumentRevisions,
   getProject,
   getProjectAgents,
@@ -82,19 +80,6 @@ describe("renderer api helpers", () => {
     );
   });
 
-  it("fetches assistant state from the canonical assistant state endpoint", async () => {
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ thread_id: "assistant-thread-1" }), {
-        status: 200,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      }),
-    );
-
-    await getAssistantState();
-
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/v1/me/assistant-state", undefined);
-  });
-
   it("cancels an execution via the canonical cancel endpoint", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ execution_id: "exec-1", status: "cancelled" }), {
@@ -133,25 +118,16 @@ describe("renderer api helpers", () => {
     );
   });
 
-  it("keeps project and assistant endpoints separate", async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: "project-1" }), {
-          status: 200,
-          headers: { "content-type": "application/json; charset=utf-8" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: "assistant-thread-1" }), {
-          status: 200,
-          headers: { "content-type": "application/json; charset=utf-8" },
-        }),
-      );
+  it("keeps project resource reads on canonical project endpoints", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ id: "project-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      }),
+    );
 
     await getProject("project-1");
-    await getAssistantThread();
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3000/v1/projects/project-1", undefined);
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:3000/v1/me/assistant-thread", undefined);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/v1/projects/project-1", undefined);
   });
 });

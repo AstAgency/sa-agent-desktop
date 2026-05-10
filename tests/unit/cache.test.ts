@@ -39,26 +39,13 @@ describe("cache storage", () => {
     });
   });
 
-  it("supports project-scoped sessions and assistant-thread cache keys", () => {
+  it("supports project-scoped session cache keys", () => {
     writeCacheValue("sessions:ws-1:p-1", [{ id: "session-1" }], "2026-05-06T12:00:00.000Z");
-    writeCacheValue("assistant-thread", { thread: { id: "thread-1" }, messages: [] }, "2026-05-06T12:00:00.000Z");
 
     expect(readCacheValue<Array<{ id: string }>>("sessions:ws-1:p-1")).toMatchObject({
       data: [{ id: "session-1" }],
       fetchedAt: "2026-05-06T12:00:00.000Z",
     });
-    expect(readCacheValue<{ thread: { id: string }; messages: [] }>("assistant-thread")).toMatchObject({
-      data: { thread: { id: "thread-1" }, messages: [] },
-      fetchedAt: "2026-05-06T12:00:00.000Z",
-    });
-  });
-
-  it("invalidates assistant-thread entries cleanly", () => {
-    writeCacheValue("assistant-thread", { thread: { id: "thread-1" }, messages: [] });
-
-    invalidateCacheValue("assistant-thread");
-
-    expect(readCacheValue("assistant-thread")).toBeNull();
   });
 
   it("ignores invalid cache payloads", () => {

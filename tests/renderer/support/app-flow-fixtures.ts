@@ -38,10 +38,6 @@ export function buildSession(overrides: Partial<SessionSummary> = {}): SessionSu
   };
 }
 
-export function buildAssistantThread(overrides: Record<string, unknown> = {}) {
-  return { id: "assistant-thread-1", title: "Assistant", summary: null, status: "active", lifecycle_state: "active", active_execution_id: null, execution_status: null, created_at: "2026-05-07T00:00:00.000Z", updated_at: "2026-05-07T00:00:00.000Z", ...overrides };
-}
-
 export function buildMessage(overrides: Partial<SessionMessage> & Pick<SessionMessage, "id" | "role" | "content_markdown">): SessionMessage {
   return {
     id: overrides.id, session_id: overrides.session_id ?? "session-1", parent_message_id: overrides.parent_message_id ?? null, role: overrides.role,

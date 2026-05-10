@@ -75,5 +75,35 @@ export function useSessionCatalog(input: {
     [catalog.projectSessionsByProjectId, input.selectedProjectId],
   );
 
-  return { globalSessions: catalog.globalSessions, projectSessionsByProjectId: catalog.projectSessionsByProjectId, currentProjectSessions };
+  function upsertSession(session: SessionSummary) {
+    setCatalog((current) => {
+      if (session.project_id) {
+        const currentSessions = current.projectSessionsByProjectId[session.project_id] ?? [];
+        return {
+          ...current,
+          projectSessionsByProjectId: {
+            ...current.projectSessionsByProjectId,
+            [session.project_id]: mergeSession(currentSessions, session),
+          },
+        };
+      }
+
+      return {
+        ...current,
+        globalSessions: mergeSession(current.globalSessions, session),
+      };
+    });
+  }
+
+  return {
+    globalSessions: catalog.globalSessions,
+    projectSessionsByProjectId: catalog.projectSessionsByProjectId,
+    currentProjectSessions,
+    upsertSession,
+  };
+}
+
+function mergeSession(currentSessions: SessionSummary[], session: SessionSummary) {
+  const withoutCurrent = currentSessions.filter((item) => item.id !== session.id);
+  return [session, ...withoutCurrent];
 }

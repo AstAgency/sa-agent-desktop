@@ -24,16 +24,17 @@ export function useThreadBinding(input: {
   sendMessage: Parameters<typeof useOnboardingFlow>[0]["sendMessage"];
   onActiveThreadChange?: (threadId: string | null) => void;
 }) {
-  const onboardingKey = input.onboarding?.kind === "project" ? "project_onboarding" : "user_onboarding";
+  const onboardingKey = input.onboarding?.kind === "user" ? "user_onboarding" : null;
   const onboardingCapability = input.onboarding
+    && onboardingKey
     ? input.capabilities.find((capability) => capability.capability_key === onboardingKey) ?? null
     : null;
   const onboardingSession = input.onboarding
-    ? input.onboarding.kind === "user"
-      ? input.state.activeSession ?? input.state.currentSessions[0] ?? null
-      : (matchesSessionCapability(input.state.activeSession, onboardingKey) ? input.state.activeSession : null) ??
-        input.state.currentSessions.find((session) => matchesSessionCapability(session, onboardingKey)) ??
-        null
+    ? (onboardingKey
+        ? (matchesSessionCapability(input.state.activeSession, onboardingKey) ? input.state.activeSession : null) ??
+          input.state.currentSessions.find((session) => matchesSessionCapability(session, onboardingKey)) ??
+          null
+        : input.state.activeSession ?? input.state.currentSessions[0] ?? null)
     : null;
   const projectRuntimeReady = input.onboarding?.kind !== "project"
     || Boolean(input.state.activeProjectAgentId);
@@ -75,9 +76,8 @@ export function useThreadBinding(input: {
 
   const isSendDisabled = !input.state.draftMessage.trim()
     || input.state.isSendingMessage
-    || input.state.isCreatingSession
-    || (Boolean(input.onboarding) && !onboardingSession);
-  const sendDisabledReason = input.state.isCreatingSession || (Boolean(input.onboarding) && !onboardingSession)
+    || input.state.isCreatingSession;
+  const sendDisabledReason = input.state.isCreatingSession
     ? translate(input.language, "chat.send.disabled.onboarding")
     : input.state.isSendingMessage
       ? translate(input.language, "chat.send.disabled.pending")

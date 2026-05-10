@@ -87,7 +87,7 @@ export function useOnboardingFlow(input: {
     if (bootstrapKey) {
       inFlightBootstrapKeysRef.current.add(bootstrapKey);
     }
-    void input.ensureSessionForCurrentScope({ capabilityKey: input.onboarding.kind === "project" ? "project_onboarding" : undefined, capabilityInput: input.onboarding.kind === "project" ? { locale: input.language } : undefined })
+    void input.ensureSessionForCurrentScope({ capabilityKey: input.expectedOnboardingCapabilityKey ?? undefined, capabilityInput: input.onboarding.kind === "project" ? { locale: input.language } : undefined })
       .then(async (session) => {
         if (!isActive || input.onboardingBootstrapSentSessionIdsRef.current.has(session.id) || inFlightBootstrapSessionIdsRef.current.has(session.id)) return;
         inFlightBootstrapSessionIdsRef.current.add(session.id);
