@@ -3,15 +3,19 @@ import { recordDebugAgentRuntimeEntry } from "../../lib/debug";
 import type { ConversationScope, SessionSummary } from "../../lib/types";
 import { createSessionFlowDebugId } from "./helpers";
 
-export function useScopeSessions(globalSessions: SessionSummary[], projectSessions: SessionSummary[]) {
+export function useScopeSessions(
+  globalSessions: SessionSummary[],
+  projectSessions: SessionSummary[],
+  initialActiveSessionId?: string | null,
+) {
   const [activeSessionByScope, setActiveSessionByScope] = useState<Record<ConversationScope, SessionSummary | null>>({
     global: null,
     project: null,
   });
 
   useEffect(() => {
-    const nextGlobal = globalSessions[0] ?? null;
-    const nextProject = projectSessions[0] ?? null;
+    const nextGlobal = globalSessions.find((session) => session.id === initialActiveSessionId) ?? globalSessions[0] ?? null;
+    const nextProject = projectSessions.find((session) => session.id === initialActiveSessionId) ?? projectSessions[0] ?? null;
 
     if (activeSessionByScope.global?.id && nextGlobal?.id && activeSessionByScope.global.id !== nextGlobal.id) {
       recordDebugAgentRuntimeEntry({ id: createSessionFlowDebugId(), startedAt: new Date().toISOString(), type: "runtime.session_mismatch", sessionId: activeSessionByScope.global.id, data: { scope: "global", currentSessionId: activeSessionByScope.global.id, runtimeActiveSessionId: nextGlobal.id } });
@@ -24,7 +28,7 @@ export function useScopeSessions(globalSessions: SessionSummary[], projectSessio
       global: current.global ?? nextGlobal,
       project: current.project ?? nextProject,
     }));
-  }, [activeSessionByScope.global?.id, activeSessionByScope.project?.id, globalSessions, projectSessions]);
+  }, [activeSessionByScope.global?.id, activeSessionByScope.project?.id, globalSessions, initialActiveSessionId, projectSessions]);
 
   return { activeSessionByScope, setActiveSessionByScope };
 }

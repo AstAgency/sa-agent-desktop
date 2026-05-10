@@ -35,6 +35,8 @@ export function useThreadBinding(input: {
         input.state.currentSessions.find((session) => matchesSessionCapability(session, onboardingKey)) ??
         null
     : null;
+  const projectRuntimeReady = input.onboarding?.kind !== "project"
+    || Boolean(input.state.activeProjectAgentId);
 
   const { visibleMessages } = useOnboardingFlow({
     language: input.language,
@@ -46,6 +48,7 @@ export function useThreadBinding(input: {
     expectedOnboardingCapabilityKey: input.onboarding ? onboardingKey : null,
     expectedOnboardingCapabilityMode: onboardingCapability?.mode ?? null,
     blockedOnboardingCapabilityKey: input.state.blockedOnboardingCapabilityKey,
+    canStartOnboardingRuntime: projectRuntimeReady,
     onboardingBootstrapSentSessionIdsRef: input.state.onboardingBootstrapSentSessionIdsRef,
     startPrompts: ONBOARDING_START_PROMPT,
     messages: input.messages,

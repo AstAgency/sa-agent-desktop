@@ -1,6 +1,9 @@
+import { useEffect, useRef } from "react";
 import type { WorkspaceShellProps } from "./workspace-shell/types";
 import { useConversationFlow } from "./workspace-shell/useConversationFlow";
 import { useRuntimeResources } from "./workspace-shell/useRuntimeResources";
+import { buildSessionTree } from "./workspace-shell/session-tree";
+import { useSessionCatalog } from "./workspace-shell/useSessionCatalog";
 import { useSessionMessages } from "./workspace-shell/useSessionMessages";
 import { useThreadBinding } from "./workspace-shell/useThreadBinding";
 import { useWorkspaceShellActions } from "./workspace-shell/useWorkspaceShellActions";
@@ -8,7 +11,27 @@ import { WorkspaceShellFrame } from "./workspace-shell/WorkspaceShellFrame";
 import { useWorkspaceShellState } from "./workspace-shell/useWorkspaceShellState";
 
 export function WorkspaceShell(props: WorkspaceShellProps) {
-  const state = useWorkspaceShellState(props);
+  const startupSessionScopeRef = useRef<{ global: boolean; project: boolean }>({ global: false, project: false });
+  const sessionCatalog = useSessionCatalog({
+    workspaceId: props.workspace.id,
+    projects: props.projects,
+    selectedProjectId: props.project?.id ?? null,
+    initialGlobalSessions: props.globalSessions,
+    initialProjectSessions: props.projectSessions,
+    onError: () => undefined,
+  });
+  const state = useWorkspaceShellState({
+    ...props,
+    globalSessions: sessionCatalog.globalSessions,
+    projectSessions: sessionCatalog.currentProjectSessions,
+  });
+  const sessionTree = buildSessionTree({
+    globalSessions: sessionCatalog.globalSessions,
+    projects: props.projects,
+    projectSessions: Object.values(sessionCatalog.projectSessionsByProjectId).flat(),
+    selectedProjectId: props.project?.id ?? null,
+    selectedSessionId: state.activeSession?.id ?? null,
+  });
   const resources = useRuntimeResources({
     language: props.language,
     workspace: props.workspace,
@@ -24,7 +47,6 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     currentScope: state.currentScope,
     activeSession: state.activeSession,
     activeAgentMcps: resources.activeAgentMcps,
-    globalAssistantMessages: props.globalAssistantMessages,
     onError: state.setErrorMessage,
   });
   const flow = useConversationFlow({
@@ -42,6 +64,7 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     projectAgents: resources.projectAgents,
     profile: props.profile,
     onRefreshWorkspace: props.onRefreshWorkspace,
+    onRefreshProfile: props.onRefreshProfile,
     setActiveSessionByScope: state.setActiveSessionByScope,
     setMessages: messages.setMessages,
     setStreamingAssistantText: messages.setStreamingAssistantText,
@@ -49,6 +72,7 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     setIsCreatingSession: state.setIsCreatingSession,
     setIsSendingMessage: state.setIsSendingMessage,
     setErrorMessage: state.setErrorMessage,
+    setToolMessage: state.setToolMessage,
   });
   const thread = useThreadBinding({
     language: props.language,
@@ -68,6 +92,8 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     language: props.language,
     workspace: props.workspace,
     currentScope: state.currentScope,
+    globalSessions: sessionCatalog.globalSessions,
+    projectSessionsByProjectId: sessionCatalog.projectSessionsByProjectId,
     currentSessions: state.currentSessions,
     activeSession: state.activeSession,
     activeAgentKey: state.activeAgentKey,
@@ -89,13 +115,48 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
     sendMessage: flow.sendMessage,
   });
 
+  useEffect(() => {
+    if (state.resolvedWorkspaceMode === "home") {
+      state.setWorkspaceMode("thread");
+      void props.onWorkspaceModeChange?.("thread");
+    }
+  }, [props.onWorkspaceModeChange, state.resolvedWorkspaceMode, state.setWorkspaceMode]);
+
+  useEffect(() => {
+    const scope = state.currentScope;
+    if (props.onboarding || state.activeSession || state.currentSessions.length > 0 || state.isCreatingSession || startupSessionScopeRef.current[scope]) {
+      return;
+    }
+
+    startupSessionScopeRef.current[scope] = true;
+    state.setErrorMessage(null);
+    state.setToolMessage(null);
+    state.setWorkspaceMode("thread");
+    void props.onWorkspaceModeChange?.("thread");
+
+    void flow.ensureSessionForCurrentScope().catch((error) => {
+      startupSessionScopeRef.current[scope] = false;
+      state.setErrorMessage(error instanceof Error ? error.message : "Failed to create a session.");
+    });
+  }, [
+    flow,
+    props.onboarding,
+    props.onWorkspaceModeChange,
+    state.activeSession,
+    state.currentScope,
+    state.currentSessions.length,
+    state.isCreatingSession,
+    state.setErrorMessage,
+    state.setToolMessage,
+    state.setWorkspaceMode,
+  ]);
+
   return (
     <WorkspaceShellFrame
       language={props.language}
       profile={props.profile}
       onboarding={props.onboarding}
       project={props.project}
-      projects={props.projects}
       projectAgents={resources.projectAgents}
       state={state}
       visibleMessages={thread.visibleMessages}
@@ -111,14 +172,17 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
       onOpenAgentFilesFolder={actions.handleOpenAgentFilesFolder}
       onCancelExecution={actions.handleCancelExecution}
       onSend={actions.handleSend}
+      onCreateSession={actions.handleCreateSession}
+      onCreateProject={actions.handleCreateProjectViaAssistant}
+      onSelectSession={actions.handleSessionSelection}
       onSelectProject={props.onSelectProject}
       onOpenSettings={props.onOpenSettings}
       onSelectProjectAgent={state.setActiveProjectAgentId}
       onToggleNav={() => state.setIsNavCollapsed((current) => !current)}
       onSelectMode={actions.handleWorkspaceModeSelection}
-      onCreateProject={actions.handleCreateProjectViaAssistant}
       onToggleContext={() => state.setIsContextPanelCollapsed((value) => !value)}
       onOpenAssistantOverlay={actions.handleAssistantOverlay}
+      sessionTree={sessionTree}
     />
   );
 }

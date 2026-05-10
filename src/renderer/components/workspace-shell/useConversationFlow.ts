@@ -1,9 +1,9 @@
 import { useRef } from "react";
-import { createSession, getAssistantThread } from "../../lib/api";
+import { createSession } from "../../lib/api";
 import { recordDebugAgentRuntimeEntry } from "../../lib/debug";
 import { translate } from "../../lib/i18n";
 import type { ConversationScope, SessionSummary, WorkspaceSummary } from "../../lib/types";
-import { createSessionFlowDebugId, mapAssistantThreadToSessionSummary, matchesSessionCapability } from "./helpers";
+import { createSessionFlowDebugId, matchesSessionCapability } from "./helpers";
 import { sendGlobalTurn, sendProjectTurn } from "./conversationTurns";
 import type { OnboardingState } from "./types";
 
@@ -21,7 +21,8 @@ export function useConversationFlow(input: {
   activeProjectAgent: { id?: string | null } | null;
   projectAgents: Array<{ id: string }>;
   profile: Parameters<typeof sendGlobalTurn>[0]["profile"];
-  onRefreshWorkspace?: () => Promise<void> | void;
+  onRefreshWorkspace?: (preferredProjectId?: string | null) => Promise<void> | void;
+  onRefreshProfile?: () => Promise<void> | void;
   setActiveSessionByScope: React.Dispatch<React.SetStateAction<Record<ConversationScope, SessionSummary | null>>>;
   setMessages: (messages: Parameters<typeof sendGlobalTurn>[0]["setMessages"] extends (v: infer T) => void ? T : never) => void;
   setStreamingAssistantText: (value: string) => void;
@@ -29,20 +30,12 @@ export function useConversationFlow(input: {
   setIsCreatingSession: (value: boolean) => void;
   setIsSendingMessage: (value: boolean) => void;
   setErrorMessage: (message: string | null) => void;
+  setToolMessage: (message: string | null) => void;
 }) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   async function ensureSessionForCurrentScope(options?: { capabilityKey?: string; capabilityInput?: Record<string, unknown> }) {
     const scopeKey = options?.capabilityKey === "project_onboarding" || input.projectId ? "project" : "global";
-    if (scopeKey === "global" && !input.projectId) {
-      const existingAssistantSession = input.activeSessionByScope.global ?? input.currentSessions.find((session) => matchesSessionCapability(session, options?.capabilityKey ?? null) || !options?.capabilityKey) ?? null;
-      if (existingAssistantSession) return existingAssistantSession;
-      const assistantThread = await getAssistantThread();
-      const assistantSession = mapAssistantThreadToSessionSummary(assistantThread.thread, input.workspace.id);
-      input.setActiveSessionByScope((current) => ({ ...current, global: assistantSession }));
-      return assistantSession;
-    }
-
     const existingSession = options?.capabilityKey
       ? input.currentSessions.find((session) => matchesSessionCapability(session, options.capabilityKey ?? null)) ?? (matchesSessionCapability(input.activeSession, options.capabilityKey ?? null) ? input.activeSession : null)
       : input.activeSessionByScope[scopeKey] ?? input.currentSessions[0] ?? null;
@@ -69,14 +62,16 @@ export function useConversationFlow(input: {
 
     try {
       if (input.currentScope === "global") {
-        await sendGlobalTurn({ workspace: input.workspace, profile: input.profile, activeAgentKey: input.activeAgentKey, session, contentMarkdown, activeSessionId: input.activeSession?.id ?? null, activeOnboarding: activeOnboarding ?? null, onRefreshWorkspace: input.onRefreshWorkspace, setMessages: input.setMessages, setStreamingAssistantText: input.setStreamingAssistantText, setIsAwaitingAssistantStream: input.setIsAwaitingAssistantStream, setActiveGlobalSession: (nextSession) => input.setActiveSessionByScope((current) => ({ ...current, global: nextSession })) });
+        await sendGlobalTurn({ language: input.language, workspace: input.workspace, profile: input.profile, activeAgentKey: input.activeAgentKey, session, contentMarkdown, hiddenPrompt: options?.hiddenPrompt, activeSessionId: input.activeSession?.id ?? null, activeOnboarding: activeOnboarding ?? null, onRefreshWorkspace: input.onRefreshWorkspace, onRefreshProfile: input.onRefreshProfile, setMessages: input.setMessages, setToolMessage: input.setToolMessage, setStreamingAssistantText: input.setStreamingAssistantText, setIsAwaitingAssistantStream: input.setIsAwaitingAssistantStream, setActiveGlobalSession: (nextSession) => input.setActiveSessionByScope((current) => ({ ...current, global: nextSession })) });
       } else {
-        await sendProjectTurn({ language: input.language, workspace: input.workspace, project: input.projectId ? { id: input.projectId, name: input.projectName } as never : null, session, contentMarkdown, activeAgentKey: input.activeAgentKey, activeSessionId: input.activeSession?.id ?? null, activeProjectAgentId: input.activeProjectAgentId, activeProjectAgent: input.activeProjectAgent as never, projectAgents: input.projectAgents as never, hiddenPrompt: options?.hiddenPrompt, activeOnboarding: activeOnboarding ?? null, setMessages: input.setMessages, setStreamingAssistantText: input.setStreamingAssistantText, setIsAwaitingAssistantStream: input.setIsAwaitingAssistantStream, setActiveProjectSession: (nextSession) => input.setActiveSessionByScope((current) => ({ ...current, [session.project_id ? "project" : "global"]: nextSession })) });
+        await sendProjectTurn({ language: input.language, workspace: input.workspace, project: input.projectId ? { id: input.projectId, name: input.projectName } as never : null, session, contentMarkdown, activeAgentKey: input.activeAgentKey, activeSessionId: input.activeSession?.id ?? null, activeProjectAgentId: input.activeProjectAgentId, activeProjectAgent: input.activeProjectAgent as never, projectAgents: input.projectAgents as never, hiddenPrompt: options?.hiddenPrompt, activeOnboarding: activeOnboarding ?? null, setMessages: input.setMessages, setToolMessage: input.setToolMessage, setStreamingAssistantText: input.setStreamingAssistantText, setIsAwaitingAssistantStream: input.setIsAwaitingAssistantStream, setActiveProjectSession: (nextSession) => input.setActiveSessionByScope((current) => ({ ...current, [session.project_id ? "project" : "global"]: nextSession })) });
       }
+      return true;
     } catch (error) {
       input.setStreamingAssistantText("");
       input.setIsAwaitingAssistantStream(false);
       input.setErrorMessage(error instanceof Error ? error.message : translate(input.language, "workspace.error.sendMessage"));
+      return false;
     } finally {
       input.setIsAwaitingAssistantStream(false);
       input.setIsSendingMessage(false);

@@ -6,7 +6,7 @@ import { ErrorScreen } from "./components/ErrorScreen";
 import { LanguageSetup } from "./components/LanguageSetup";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspaceShell } from "./components/WorkspaceShell";
-import { createWorkspaceProject, getCurrentApiBaseUrl, getEmbeddingPolicy, postDevReset } from "./lib/api";
+import { createWorkspaceProject, getCurrentApiBaseUrl, getEmbeddingPolicy, getMe, postDevReset } from "./lib/api";
 import { clearEntityCache, invalidateCacheValue } from "./lib/cache";
 import { getDebugNetworkEntries, getDebugStateSnapshot, type DebugStateSnapshot } from "./lib/debug";
 import { translate } from "./lib/i18n";
@@ -23,7 +23,7 @@ import type {
   WorkspaceMode,
 } from "./lib/types";
 import { defaultAppState } from "./state/app-state";
-import { bootstrapApp, decideInitialScreen, runBootstrapFlow } from "./state/bootstrap";
+import { bootstrapApp, decideInitialScreen, isExplicitlyIncompleteOnboarding, runBootstrapFlow } from "./state/bootstrap";
 
 export default function App() {
   const embeddingPolicyCacheRef = useRef<{ label: string | null; fetchedAt: number } | null>(null);
@@ -252,8 +252,9 @@ export default function App() {
 
   const refreshWorkspaceSnapshot = async (options?: {
     preserveThreadMode?: boolean;
+    preferredProjectId?: string | null;
   }) => {
-    const preferredProjectId = appState?.activeProjectId ?? bootstrapSnapshot?.selectedProject?.id ?? null;
+    const preferredProjectId = options?.preferredProjectId ?? appState?.activeProjectId ?? bootstrapSnapshot?.selectedProject?.id ?? null;
     const preferredAgentKey = appState?.selectedAgentKey ?? bootstrapSnapshot?.selectedAgentKey ?? null;
     const result = await runBootstrapFlow({
       forceRefresh: true,
@@ -265,6 +266,7 @@ export default function App() {
       try {
         const nextAppState = await updateStoredAppState({
           selectedAgentKey: result.snapshot.selectedAgentKey,
+          ...(preferredProjectId ? { activeProjectId: preferredProjectId } : {}),
           ...(options?.preserveThreadMode ? { workspaceMode: "thread" as const } : {}),
         });
         setAppState(nextAppState);
@@ -272,16 +274,21 @@ export default function App() {
         setAppState((current) => ({
           ...(current ?? defaultAppState),
           selectedAgentKey: result.snapshot?.selectedAgentKey ?? null,
+          ...(preferredProjectId ? { activeProjectId: preferredProjectId } : {}),
           ...(options?.preserveThreadMode ? { workspaceMode: "thread" as const } : {}),
         }));
       }
     } else if (options?.preserveThreadMode) {
       try {
-        const nextAppState = await updateStoredAppState({ workspaceMode: "thread" });
+        const nextAppState = await updateStoredAppState({
+          workspaceMode: "thread",
+          ...(preferredProjectId ? { activeProjectId: preferredProjectId } : {}),
+        });
         setAppState(nextAppState);
       } catch {
         setAppState((current) => ({
           ...(current ?? defaultAppState),
+          ...(preferredProjectId ? { activeProjectId: preferredProjectId } : {}),
           workspaceMode: "thread",
         }));
       }
@@ -296,7 +303,6 @@ export default function App() {
   const completeUserOnboarding = () => {
     invalidateCacheValue("me");
     invalidateCacheValue("me-bootstrap");
-    invalidateCacheValue("assistant-thread");
     void refreshWorkspaceSnapshot({ preserveThreadMode: true }).catch((error) => {
       setBootstrapErrorKind("request-failed");
       setBootstrapErrorMessage(error instanceof Error ? error.message : "Unknown bootstrap error.");
@@ -304,19 +310,27 @@ export default function App() {
     });
   };
 
-  const refreshWorkspaceFromAssistantMutation = () => {
+  const refreshWorkspaceFromAssistantMutation = async (preferredProjectId?: string | null) => {
     const workspaceId = bootstrapSnapshot?.selectedWorkspace.id ?? null;
 
     invalidateCacheValue("me");
     invalidateCacheValue("me-bootstrap");
-    invalidateCacheValue("assistant-thread");
     if (workspaceId) {
       invalidateCacheValue(`projects:${workspaceId}`);
+      if (preferredProjectId) {
+        invalidateCacheValue(`sessions:${workspaceId}:${preferredProjectId}`);
+      }
     }
+    await refreshWorkspaceSnapshot({
+      preserveThreadMode: true,
+      preferredProjectId: preferredProjectId ?? null,
+    });
+  };
 
-    setBootstrapSnapshot(null);
-    setBootstrapAttempt((current) => current + 1);
-    setScreen("bootstrapping");
+  const refreshProfileFromAssistantMutation = async () => {
+    invalidateCacheValue("me");
+    const profile = await getMe();
+    setBootstrapSnapshot((current) => (current ? { ...current, profile } : current));
   };
 
   const createProject = async (input: CreateProjectInput) => {
@@ -573,13 +587,13 @@ export default function App() {
     );
   } else if (screen === "workspace-shell" && bootstrapSnapshot?.selectedWorkspace) {
     const onboarding =
-      !bootstrapSnapshot.profile.onboarding_completed
+      isExplicitlyIncompleteOnboarding(bootstrapSnapshot.profile.onboarding_completed)
         ? {
             kind: "user" as const,
             workspaceId: bootstrapSnapshot.selectedWorkspace.id,
             onComplete: completeUserOnboarding,
           }
-        : bootstrapSnapshot.selectedProject && !bootstrapSnapshot.selectedProject.onboarding_completed
+        : bootstrapSnapshot.selectedProject && isExplicitlyIncompleteOnboarding(bootstrapSnapshot.selectedProject.onboarding_completed)
           ? {
               kind: "project" as const,
               projectId: bootstrapSnapshot.selectedProject.id,
@@ -602,6 +616,7 @@ export default function App() {
         onboarding={onboarding}
         initialWorkspaceMode={appState.workspaceMode ?? "home"}
         initialActiveProjectAgentId={appState.activeProjectAgentId ?? null}
+        initialActiveSessionId={appState.activeSessionId ?? null}
         onWorkspaceModeChange={selectWorkspaceMode}
         onActiveProjectAgentChange={handleActiveProjectAgentChange}
         onActiveSessionChange={handleActiveSessionChange}
@@ -610,6 +625,7 @@ export default function App() {
         onSelectProject={selectProject}
         onCreateProject={createProject}
         onRefreshWorkspace={refreshWorkspaceFromAssistantMutation}
+        onRefreshProfile={refreshProfileFromAssistantMutation}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
     );

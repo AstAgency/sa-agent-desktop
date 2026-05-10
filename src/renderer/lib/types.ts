@@ -240,6 +240,32 @@ export type LlmRequestMessage = {
   content: string;
 };
 
+export type LlmToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description?: string | null;
+    parameters?: Record<string, unknown> | null;
+  };
+};
+
+export type LlmToolChoice =
+  | "none"
+  | "auto"
+  | {
+      type: "function";
+      function: {
+        name: string;
+      };
+    };
+
+export type LlmResponseToolCall = {
+  id: string;
+  type: "function";
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
 export type LlmResponseInput = {
   workspace_id: string;
   project_id?: string | null;
@@ -249,6 +275,8 @@ export type LlmResponseInput = {
   model?: string | null;
   operation_kind?: "generate_text" | "generate_json";
   messages: LlmRequestMessage[];
+  tools?: LlmToolDefinition[] | null;
+  tool_choice?: LlmToolChoice | null;
 };
 
 export type LlmResponseRecord = {
@@ -257,6 +285,7 @@ export type LlmResponseRecord = {
   model?: string | null;
   output_text?: string | null;
   finish_reason?: string | null;
+  tool_calls?: LlmResponseToolCall[] | null;
   usage?: Record<string, unknown> | null;
   audit?: Record<string, unknown> | null;
   [key: string]: unknown;
@@ -403,6 +432,15 @@ export type McpToolDescriptor = {
   title?: string | null;
   description?: string | null;
   inputSchema?: Record<string, unknown> | null;
+};
+
+export type RuntimeToolDescriptor = {
+  name: string;
+  description?: string | null;
+  inputSchema?: Record<string, unknown> | null;
+  plane: "backend" | "local";
+  backendName?: string | null;
+  localName?: string | null;
 };
 
 export type McpToolCallContentItem =
@@ -561,8 +599,12 @@ export type BootstrapSnapshot = {
 export type MeBootstrapRecord = {
   profile?: ViewerProfile | null;
   viewer_profile?: ViewerProfile | null;
+  selected_workspace_id?: string | null;
+  selected_project_id?: string | null;
   assistant_thread?: AssistantThreadRecord | null;
   assistant_messages?: SessionMessage[] | null;
+  user_global_session?: SessionSummary | null;
+  user_global_messages?: SessionMessage[] | null;
   workspaces?: WorkspaceSummary[] | null;
   selected_workspace?: WorkspaceSummary | null;
   selected_project?: ProjectSummary | null;

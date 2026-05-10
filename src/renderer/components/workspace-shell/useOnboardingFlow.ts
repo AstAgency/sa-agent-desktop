@@ -4,9 +4,6 @@ import type { AppLanguage, SessionMessage, SessionSummary } from "../../lib/type
 import { isHiddenPromptMessage, matchesSessionCapability } from "./helpers";
 import type { OnboardingState } from "./types";
 
-const failedBootstrapKeys = new Set<string>();
-const inFlightBootstrapKeys = new Set<string>();
-
 export function useOnboardingFlow(input: {
   language: AppLanguage;
   onboarding: OnboardingState;
@@ -17,6 +14,7 @@ export function useOnboardingFlow(input: {
   expectedOnboardingCapabilityKey: string | null;
   expectedOnboardingCapabilityMode: string | null;
   blockedOnboardingCapabilityKey: string | null;
+  canStartOnboardingRuntime: boolean;
   onboardingBootstrapSentSessionIdsRef: React.MutableRefObject<Set<string>>;
   startPrompts: Record<string, string>;
   messages: SessionMessage[];
@@ -31,9 +29,12 @@ export function useOnboardingFlow(input: {
   isRecoveringOnboarding: boolean;
   onSessionPinned: (session: SessionSummary) => void;
   ensureSessionForCurrentScope: (options?: { capabilityKey?: string; capabilityInput?: Record<string, unknown> }) => Promise<SessionSummary>;
-  sendMessage: (session: SessionSummary, contentMarkdown: string, options?: { hiddenPrompt?: string }, activeOnboarding?: OnboardingState) => Promise<void>;
+  sendMessage: (session: SessionSummary, contentMarkdown: string, options?: { hiddenPrompt?: string }, activeOnboarding?: OnboardingState) => Promise<boolean>;
 }) {
   const failedBootstrapKeyRef = useRef<string | null>(null);
+  const failedBootstrapKeysRef = useRef(new Set<string>());
+  const inFlightBootstrapKeysRef = useRef(new Set<string>());
+  const inFlightBootstrapSessionIdsRef = useRef(new Set<string>());
   const bootstrapKey = input.onboarding
     ? `${input.onboarding.kind}:${input.onboarding.kind === "user" ? input.onboarding.workspaceId : input.onboarding.projectId}:${input.language}:${input.expectedOnboardingCapabilityKey ?? "default"}`
     : null;
@@ -41,8 +42,8 @@ export function useOnboardingFlow(input: {
   useEffect(() => {
     if (!bootstrapKey) {
       failedBootstrapKeyRef.current = null;
-      failedBootstrapKeys.clear();
-      inFlightBootstrapKeys.clear();
+      failedBootstrapKeysRef.current.clear();
+      inFlightBootstrapKeysRef.current.clear();
     }
   }, [bootstrapKey]);
 
@@ -65,9 +66,12 @@ export function useOnboardingFlow(input: {
   }, [input]);
 
   useEffect(() => {
-    if (!input.onboarding || input.isCreatingSession) return;
+    if (!input.onboarding || input.isCreatingSession || !input.canStartOnboardingRuntime) return;
+    const hasTranscriptActivity = input.streamingAssistantText.trim().length > 0
+      || input.messages.some((message) => !message.is_hidden && !isHiddenPromptMessage(message.content_markdown, input.startPrompts));
+    if (hasTranscriptActivity) return;
     if (bootstrapKey && failedBootstrapKeyRef.current === bootstrapKey) return;
-    if (bootstrapKey && (failedBootstrapKeys.has(bootstrapKey) || inFlightBootstrapKeys.has(bootstrapKey))) return;
+    if (bootstrapKey && (failedBootstrapKeysRef.current.has(bootstrapKey) || inFlightBootstrapKeysRef.current.has(bootstrapKey))) return;
     if (input.onboarding.kind === "project" && input.expectedOnboardingCapabilityKey && input.blockedOnboardingCapabilityKey === input.expectedOnboardingCapabilityKey) return;
     if (input.onboarding.kind === "project" && input.expectedOnboardingCapabilityMode && !["interactive", "both"].includes(input.expectedOnboardingCapabilityMode)) {
       input.onSetBlockedCapability(input.expectedOnboardingCapabilityKey ?? "project_onboarding");
@@ -77,26 +81,33 @@ export function useOnboardingFlow(input: {
     if (input.onboardingSession) {
       if (input.activeSession?.id !== input.onboardingSession.id) input.onSessionPinned(input.onboardingSession);
       if (input.onboardingBootstrapSentSessionIdsRef.current.has(input.onboardingSession.id)) return;
+      if (inFlightBootstrapSessionIdsRef.current.has(input.onboardingSession.id)) return;
     }
     let isActive = true;
     if (bootstrapKey) {
-      inFlightBootstrapKeys.add(bootstrapKey);
+      inFlightBootstrapKeysRef.current.add(bootstrapKey);
     }
     void input.ensureSessionForCurrentScope({ capabilityKey: input.onboarding.kind === "project" ? "project_onboarding" : undefined, capabilityInput: input.onboarding.kind === "project" ? { locale: input.language } : undefined })
       .then(async (session) => {
+        if (!isActive || input.onboardingBootstrapSentSessionIdsRef.current.has(session.id) || inFlightBootstrapSessionIdsRef.current.has(session.id)) return;
+        inFlightBootstrapSessionIdsRef.current.add(session.id);
+        const sent = await input.sendMessage(session, input.startPrompts[input.language], { hiddenPrompt: input.startPrompts[input.language] }, input.onboarding);
+        inFlightBootstrapSessionIdsRef.current.delete(session.id);
         if (bootstrapKey) {
-          inFlightBootstrapKeys.delete(bootstrapKey);
+          inFlightBootstrapKeysRef.current.delete(bootstrapKey);
         }
-        if (!isActive || input.onboardingBootstrapSentSessionIdsRef.current.has(session.id)) return;
-        input.onboardingBootstrapSentSessionIdsRef.current.add(session.id);
-        await input.sendMessage(session, input.startPrompts[input.language], { hiddenPrompt: input.startPrompts[input.language] }, input.onboarding);
+        if (sent) {
+          input.onboardingBootstrapSentSessionIdsRef.current.add(session.id);
+          return;
+        }
+        if (input.onboardingSession?.id) input.onboardingBootstrapSentSessionIdsRef.current.delete(input.onboardingSession.id);
       })
       .catch((error) => {
         if (!isActive) return;
         if (bootstrapKey) {
-          inFlightBootstrapKeys.delete(bootstrapKey);
+          inFlightBootstrapKeysRef.current.delete(bootstrapKey);
           failedBootstrapKeyRef.current = bootstrapKey;
-          failedBootstrapKeys.add(bootstrapKey);
+          failedBootstrapKeysRef.current.add(bootstrapKey);
         }
         const message = error instanceof Error ? error.message : translate(input.language, "workspace.error.startOnboarding");
         if (input.onboarding?.kind === "project" && input.expectedOnboardingCapabilityKey && (message.includes("does not support interactive sessions") || message.includes("skill_not_interactive"))) {
@@ -105,6 +116,7 @@ export function useOnboardingFlow(input: {
           return;
         }
         if (input.onboardingSession?.id) input.onboardingBootstrapSentSessionIdsRef.current.delete(input.onboardingSession.id);
+        if (input.onboardingSession?.id) inFlightBootstrapSessionIdsRef.current.delete(input.onboardingSession.id);
         input.onError(message);
       });
     return () => {

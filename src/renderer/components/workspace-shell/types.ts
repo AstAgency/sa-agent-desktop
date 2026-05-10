@@ -42,6 +42,7 @@ export type WorkspaceShellProps = {
   onboarding: OnboardingState;
   initialWorkspaceMode?: WorkspaceMode;
   initialActiveProjectAgentId?: string | null;
+  initialActiveSessionId?: string | null;
   onWorkspaceModeChange?: (mode: WorkspaceMode) => void;
   onActiveProjectAgentChange?: (projectAgentId: string | null) => void;
   onActiveSessionChange?: (sessionId: string | null) => void;
@@ -49,6 +50,34 @@ export type WorkspaceShellProps = {
   onSelectAgent: (agentKey: string | null) => void;
   onSelectProject: (projectId: string | null) => void;
   onCreateProject: (value: CreateProjectInput) => Promise<void>;
-  onRefreshWorkspace?: () => Promise<void> | void;
+  onRefreshWorkspace?: (preferredProjectId?: string | null) => Promise<void> | void;
+  onRefreshProfile?: () => Promise<void> | void;
   onOpenSettings: () => void;
+};
+
+export type SidebarVisibleMode = "files";
+
+export type SidebarSessionItem = {
+  session: SessionSummary;
+  isSelected: boolean;
+};
+
+export type SidebarGlobalGroup = {
+  sessions: SidebarSessionItem[];
+};
+
+export type SidebarProjectGroup = {
+  project: ProjectSummary;
+  sessions: SidebarSessionItem[];
+  isSelected: boolean;
+};
+
+export type SidebarSessionTree = {
+  visibleModes: SidebarVisibleMode[];
+  globalGroup: SidebarGlobalGroup;
+  projectGroups: SidebarProjectGroup[];
+  selected: {
+    projectId: string | null;
+    sessionId: string | null;
+  };
 };

@@ -515,7 +515,7 @@ export async function postLlmResponse(
   payload: LlmResponseInput,
   fetcher?: FetchLike,
   signal?: AbortSignal,
-) {
+): Promise<LlmResponseRecord> {
   return fetchJson<LlmResponseRecord>(
     "/v1/llm/responses",
     {

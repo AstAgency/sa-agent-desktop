@@ -1,10 +1,9 @@
-import { getAgentProfiles, getAssistantThread, getMeBootstrap, getSessions, getWorkspaceProjects } from "../lib/api";
+import { getAgentProfiles, getMeBootstrap, getSessions, getWorkspaceProjects } from "../lib/api";
 import { getCachedResource } from "../lib/cache";
 import { getStoredAppState } from "../lib/storage";
 import type {
   AgentCatalogItem,
   AgentProfileRecord,
-  AssistantThreadRecord,
   BootstrapErrorKind,
   AppScreen,
   BootstrapSnapshot,
@@ -33,6 +32,10 @@ export function decideInitialScreen(
   return "bootstrapping";
 }
 
+export function isExplicitlyIncompleteOnboarding(value: boolean | null | undefined) {
+  return value === false;
+}
+
 export function resolveBootstrapNextScreen(input: {
   profile: Pick<ViewerProfile, "onboarding_completed">;
   workspaces: Array<Pick<WorkspaceSummary, "id">>;
@@ -42,7 +45,7 @@ export function resolveBootstrapNextScreen(input: {
     return "bootstrap-error";
   }
 
-  if (!input.profile.onboarding_completed) {
+  if (isExplicitlyIncompleteOnboarding(input.profile.onboarding_completed)) {
     return "workspace-shell";
   }
 
@@ -78,7 +81,6 @@ const cacheTtls = {
   agentProfiles: 120_000,
   projects: 120_000,
   sessions: 60_000,
-  assistantThread: 60_000,
 } as const;
 
 export async function runBootstrapFlow(input?: {
@@ -144,23 +146,8 @@ export async function runBootstrapFlow(input?: {
     bootstrapSelectedProject ?? selectBootstrapProject(projects, input?.preferredProjectId ?? null);
 
   input?.onStageChange?.("assistant");
-  const assistantThreadEnvelope =
-    meBootstrap.assistant_thread
-      ? {
-          thread: meBootstrap.assistant_thread,
-          messages: meBootstrap.assistant_messages ?? [],
-        }
-      : await getCachedResource({
-          key: "assistant-thread",
-          ttlMs: cacheTtls.assistantThread,
-          loader: () => getAssistantThread(),
-          forceRefresh: input?.forceRefresh,
-        }).catch(() => null);
-
-  const globalSessions = assistantThreadEnvelope
-    ? [mapAssistantThreadToSessionSummary(assistantThreadEnvelope.thread, selectedWorkspace.id)]
-    : [];
-  const globalAssistantMessages = assistantThreadEnvelope?.messages ?? [];
+  const globalSessions = meBootstrap.user_global_session ? [meBootstrap.user_global_session] : [];
+  const globalAssistantMessages = meBootstrap.user_global_messages ?? [];
 
   let projectSessions: SessionSummary[] = [];
   if (selectedProject) {
@@ -223,24 +210,5 @@ function mapAgentProfileToCatalogItem(agent: AgentProfileRecord): AgentCatalogIt
     visibility: agent.visibility ?? null,
     is_active: agent.is_active ?? true,
     safe_metadata: agent.safe_metadata ?? null,
-  };
-}
-
-function mapAssistantThreadToSessionSummary(
-  thread: AssistantThreadRecord,
-  workspaceId: string,
-): SessionSummary {
-  return {
-    id: thread.id,
-    workspace_id: workspaceId,
-    project_id: null,
-    title: thread.title ?? thread.summary ?? "Assistant",
-    summary: thread.summary ?? null,
-    status: thread.status ?? null,
-    lifecycle_state: thread.lifecycle_state ?? null,
-    execution_id: thread.active_execution_id ?? null,
-    execution_status: thread.execution_status ?? null,
-    created_at: thread.created_at ?? undefined,
-    updated_at: thread.updated_at ?? undefined,
   };
 }

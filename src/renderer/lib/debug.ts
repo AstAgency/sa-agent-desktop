@@ -1,5 +1,6 @@
 import { readAllCacheValuesDebug, type DebugCacheEntry } from "./cache";
 import type { BootstrapSnapshot, DebugNetworkEntry, PersistedAppState } from "./types";
+import type { RuntimeEvent } from "../agent/runtime-events";
 
 const networkLog: DebugNetworkEntry[] = [];
 const agentRuntimeLog: DebugAgentRuntimeEntry[] = [];
@@ -35,6 +36,21 @@ export function recordDebugAgentRuntimeEntry(entry: DebugAgentRuntimeEntry) {
 
 export function getDebugAgentRuntimeEntries() {
   return [...agentRuntimeLog];
+}
+
+export function recordDebugRuntimeEvent(input: {
+  id: string;
+  startedAt: string;
+  sessionId?: string | null;
+  event: RuntimeEvent;
+}) {
+  recordDebugAgentRuntimeEntry({
+    id: input.id,
+    startedAt: input.startedAt,
+    type: input.event.type,
+    sessionId: input.sessionId ?? null,
+    data: input.event,
+  });
 }
 
 export function getDebugStateSnapshot(input: {

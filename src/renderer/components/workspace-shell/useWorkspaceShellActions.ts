@@ -1,15 +1,17 @@
 import { openAgentFilesFolder } from "../../lib/agent-files";
-import { cancelExecution, createSession, getAssistantThread } from "../../lib/api";
+import { cancelExecution, createSession } from "../../lib/api";
 import { recordDebugAgentRuntimeEntry } from "../../lib/debug";
 import { translate } from "../../lib/i18n";
 import type { ConversationScope, SessionSummary, WorkspaceMode, WorkspaceSummary } from "../../lib/types";
-import { createSessionFlowDebugId, mapAssistantThreadToSessionSummary } from "./helpers";
+import { createSessionFlowDebugId } from "./helpers";
 import type { OnboardingState } from "./types";
 
 export function useWorkspaceShellActions(input: {
   language: "ru" | "en";
   workspace: WorkspaceSummary;
   currentScope: ConversationScope;
+  globalSessions: SessionSummary[];
+  projectSessionsByProjectId: Record<string, SessionSummary[]>;
   currentSessions: SessionSummary[];
   activeSession: SessionSummary | null;
   activeAgentKey: string | null;
@@ -28,40 +30,40 @@ export function useWorkspaceShellActions(input: {
   showLockedPopup: (message: string) => void;
   onSelectProject: (projectId: string | null) => void;
   onWorkspaceModeChange?: (mode: WorkspaceMode) => void;
-  sendMessage: (session: SessionSummary, contentMarkdown: string, options?: { hiddenPrompt?: string }, activeOnboarding?: OnboardingState) => Promise<void>;
+  sendMessage: (session: SessionSummary, contentMarkdown: string, options?: { hiddenPrompt?: string }, activeOnboarding?: OnboardingState) => Promise<boolean>;
 }) {
-  async function resolveSession() {
-    if (input.activeSession) {
-      return input.activeSession;
-    }
-    if (input.currentScope === "global") {
-      const assistantThread = await getAssistantThread();
-      const session = mapAssistantThreadToSessionSummary(assistantThread.thread, input.workspace.id);
-      input.setActiveSessionByScope((current) => ({ ...current, global: session }));
-      return session;
-    }
+  const isBlockingOnboarding = false;
 
+  async function createFreshSession(projectId: string | null) {
     input.setIsCreatingSession(true);
     try {
       const session = await createSession({
         workspace_id: input.workspace.id,
-        project_id: input.projectId ?? undefined,
+        project_id: projectId ?? undefined,
         agent_key: input.activeAgentKey ?? undefined,
         channel_kind: "desktop",
         resume_strategy: "new",
       });
-      input.setActiveSessionByScope((current) => ({ ...current, [input.currentScope]: session }));
-      recordDebugAgentRuntimeEntry({
-        id: createSessionFlowDebugId(),
-        startedAt: new Date().toISOString(),
-        type: "session.created",
-        sessionId: session.id,
-        data: { scope: input.currentScope, capabilityKey: null, projectId: session.project_id ?? null, source: "handleSend" },
-      });
+      const scope = session.project_id ? "project" : "global";
+      input.setActiveSessionByScope((current) => ({ ...current, [scope]: session }));
       return session;
     } finally {
       input.setIsCreatingSession(false);
     }
+  }
+
+  async function resolveSession() {
+    if (input.activeSession) return input.activeSession;
+    if (input.currentSessions[0]) return input.currentSessions[0];
+    const session = await createFreshSession(input.projectId);
+    recordDebugAgentRuntimeEntry({
+      id: createSessionFlowDebugId(),
+      startedAt: new Date().toISOString(),
+      type: "session.created",
+      sessionId: session.id,
+      data: { scope: input.currentScope, capabilityKey: null, projectId: session.project_id ?? null, source: "handleSend" },
+    });
+    return session;
   }
 
   async function handleSend() {
@@ -79,7 +81,7 @@ export function useWorkspaceShellActions(input: {
   }
 
   function handleCreateProjectViaAssistant() {
-    if (input.onboarding) {
+    if (isBlockingOnboarding) {
       input.showLockedPopup(translate(input.language, "workspace.nav.locked.onboarding"));
       return;
     }
@@ -91,16 +93,41 @@ export function useWorkspaceShellActions(input: {
   }
 
   function handleWorkspaceModeSelection(mode: WorkspaceMode) {
-    if (input.onboarding && mode !== "thread") {
-      input.showLockedPopup(translate(input.language, "workspace.nav.locked.onboarding"));
-      return;
-    }
     input.setWorkspaceMode(mode);
     void input.onWorkspaceModeChange?.(mode);
   }
 
+  async function handleCreateSession() {
+    input.setErrorMessage(null);
+    input.setToolMessage(null);
+    const session = await createFreshSession(input.projectId);
+    input.setWorkspaceMode("thread");
+    void input.onWorkspaceModeChange?.("thread");
+    recordDebugAgentRuntimeEntry({
+      id: createSessionFlowDebugId(),
+      startedAt: new Date().toISOString(),
+      type: "session.created",
+      sessionId: session.id,
+      data: { scope: session.project_id ? "project" : "global", capabilityKey: null, projectId: session.project_id ?? null, source: "new-session" },
+    });
+  }
+
+  async function handleSessionSelection(sessionId: string, projectId: string | null) {
+    const sessions = projectId ? input.projectSessionsByProjectId[projectId] ?? [] : input.globalSessions;
+    const session = sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    input.setErrorMessage(null);
+    input.setToolMessage(null);
+    input.setActiveSessionByScope((current) => ({ ...current, [projectId ? "project" : "global"]: session }));
+    if (projectId !== input.projectId) input.onSelectProject(projectId);
+    input.setWorkspaceMode("thread");
+    void input.onWorkspaceModeChange?.("thread");
+  }
+
   return {
     handleSend,
+    handleCreateSession,
+    handleSessionSelection,
     handleCreateProjectViaAssistant,
     handleWorkspaceModeSelection,
     handleOpenAgentFilesFolder: async () => {
@@ -116,7 +143,7 @@ export function useWorkspaceShellActions(input: {
       }
     },
     handleAssistantOverlay: (mode: "ask-assistant" | "run-command") => {
-      if (input.onboarding) {
+      if (isBlockingOnboarding) {
         input.showLockedPopup(translate(input.language, "workspace.assistant.disabled.onboarding"));
         return;
       }

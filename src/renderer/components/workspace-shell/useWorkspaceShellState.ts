@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ConversationScope } from "../../lib/types";
+import type { ConversationScope, WorkspaceMode } from "../../lib/types";
 import { resolveWorkspaceMode } from "../../lib/workspace-mode";
 import {
   readProfileActivityDomain,
@@ -21,6 +21,7 @@ export function useWorkspaceShellState(
     | "onboarding"
     | "initialWorkspaceMode"
     | "initialActiveProjectAgentId"
+    | "initialActiveSessionId"
     | "onActiveProjectAgentChange"
     | "onActiveSessionChange"
     | "onWorkspaceModeChange"
@@ -34,7 +35,7 @@ export function useWorkspaceShellState(
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [blockedOnboardingCapabilityKey, setBlockedOnboardingCapabilityKey] = useState<string | null>(null);
   const [isRecoveringOnboarding, setIsRecoveringOnboarding] = useState(false);
-  const [workspaceMode, setWorkspaceMode] = useState(resolveWorkspaceMode(input.initialWorkspaceMode));
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(resolveInitialWorkspaceMode(input.initialWorkspaceMode));
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
   const [isContextPanelCollapsed, setIsContextPanelCollapsed] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -42,10 +43,11 @@ export function useWorkspaceShellState(
   const onboardingBootstrapSentSessionIdsRef = useRef(new Set<string>());
   const previousOnboardingRef = useRef<WorkspaceShellProps["onboarding"]>(input.onboarding);
   const { lockedPopup, showLockedPopup, dismissLockedPopup } = useLockedPopup();
-  const { activeSessionByScope, setActiveSessionByScope } = useScopeSessions(input.globalSessions, input.projectSessions);
+  const { activeSessionByScope, setActiveSessionByScope } = useScopeSessions(input.globalSessions, input.projectSessions, input.initialActiveSessionId ?? null);
 
   const currentScope: ConversationScope = input.project ? "project" : "global";
-  const resolvedWorkspaceMode = input.onboarding ? "thread" : resolveWorkspaceMode(workspaceMode);
+  const isBlockingOnboarding = false;
+  const resolvedWorkspaceMode = resolveWorkspaceMode(workspaceMode);
   const activeAgentKey = input.project?.agent_key ?? input.selectedAgentKey ?? null;
   const currentSessions = input.project ? input.projectSessions : input.globalSessions;
   const activeSession = activeSessionByScope[currentScope] ?? currentSessions[0] ?? null;
@@ -54,7 +56,7 @@ export function useWorkspaceShellState(
   const profileActivityDomain = readProfileActivityDomain(input.profile);
 
   useEffect(() => {
-    setWorkspaceMode(resolveWorkspaceMode(input.initialWorkspaceMode));
+    setWorkspaceMode(resolveInitialWorkspaceMode(input.initialWorkspaceMode));
   }, [input.initialWorkspaceMode]);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export function useWorkspaceShellState(
   }, [input.onboarding]);
 
   useEffect(() => {
-    if (previousOnboardingRef.current && !input.onboarding) {
+    if (previousOnboardingRef.current?.kind === "user" && !input.onboarding) {
       setWorkspaceMode("thread");
       void input.onWorkspaceModeChange?.("thread");
     }
@@ -115,6 +117,7 @@ export function useWorkspaceShellState(
     activeSessionByScope,
     setActiveSessionByScope,
     currentScope,
+    isBlockingOnboarding,
     resolvedWorkspaceMode,
     activeAgentKey,
     currentSessions,
@@ -123,4 +126,9 @@ export function useWorkspaceShellState(
     profilePreferredAgentName,
     profileActivityDomain,
   };
+}
+
+function resolveInitialWorkspaceMode(value: WorkspaceShellProps["initialWorkspaceMode"]) {
+  const resolved = resolveWorkspaceMode(value);
+  return resolved === "home" ? "thread" : resolved;
 }

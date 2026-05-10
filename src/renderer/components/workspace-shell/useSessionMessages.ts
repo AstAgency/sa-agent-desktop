@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { getAssistantThread, getSessionMessages } from "../../lib/api";
+import { getSessionMessages } from "../../lib/api";
 import { recordDebugAgentRuntimeEntry } from "../../lib/debug";
 import { translate } from "../../lib/i18n";
 import type { AppLanguage, ConversationScope, SessionMessage, SessionSummary, WorkspaceSummary } from "../../lib/types";
-import { createSessionFlowDebugId, mapAssistantThreadToSessionSummary } from "./helpers";
+import { createSessionFlowDebugId } from "./helpers";
 
 export function useSessionMessages(input: {
   language: AppLanguage;
@@ -11,7 +11,6 @@ export function useSessionMessages(input: {
   currentScope: ConversationScope;
   activeSession: SessionSummary | null;
   activeAgentMcps: unknown;
-  globalAssistantMessages: SessionMessage[];
   onError: (message: string | null) => void;
 }) {
   const { language, currentScope, activeSession, onError } = input;
@@ -42,10 +41,10 @@ export function useSessionMessages(input: {
       startedAt: new Date().toISOString(),
       type: "messages.fetch",
       sessionId: activeSession.id,
-      data: { source: currentScope === "global" ? "assistant-thread-restore" : "active-session-effect" },
+      data: { source: "active-session-effect", scope: currentScope },
     });
 
-    void (currentScope === "global" ? getAssistantThread().then((envelope) => envelope.messages) : getSessionMessages(activeSession.id))
+    void getSessionMessages(activeSession.id)
       .then((items) => {
         if (!isActive) return;
         setMessages(items);
@@ -62,7 +61,7 @@ export function useSessionMessages(input: {
     return () => {
       isActive = false;
     };
-  }, [activeSession?.id, currentScope, input.activeAgentMcps, input.globalAssistantMessages, language, onError]);
+  }, [activeSession?.id, currentScope, input.activeAgentMcps, language, onError]);
 
   return { messages, setMessages, streamingAssistantText, setStreamingAssistantText, isAwaitingAssistantStream, setIsAwaitingAssistantStream, isLoadingMessages, setIsLoadingMessages };
 }

@@ -8,17 +8,30 @@ import {
   type Model,
   type StreamOptions,
   type TextContent,
+  type ToolCall,
   type UserMessage,
 } from "@earendil-works/pi-ai";
-import { createMcpAgentTools } from "./mcp-tools";
+import { buildAgentTools } from "./agent-tools";
+import { completeWithStructuredTools } from "./model-adapter/llm-response-model";
+import { allowLocalFileWrite } from "./local-tool-policy";
+import {
+  buildSkippedProfileMutationResult,
+  isSkippedMutationResult,
+  preparePersonalBackendToolCall,
+} from "./personal-profile-tool-state";
+import { resolveRuntimeApproval } from "./runtime-approvals";
+import type { RuntimeStreamEvent } from "./runtime-events";
+import { buildRuntimeToolCatalog } from "./tool-catalog";
+import { mapToolResultToPromptMessage } from "./tool-result-prompt";
+import { callLocalTool } from "./executors/local-tool-executor";
 import { agentMessagesToSessionMessages, sessionMessagesToAgentMessages } from "./transcript";
-import { postLlmResponse, postMeMcp } from "../lib/api";
+import { postMeMcp } from "../lib/api";
 import { recordDebugAgentRuntimeEntry } from "../lib/debug";
 import type {
   LlmRequestMessage,
-  McpBridge,
   McpToolCallResult,
   McpToolDescriptor,
+  RuntimeToolDescriptor,
   SessionMessage,
   ViewerProfile,
 } from "../lib/types";
@@ -44,22 +57,27 @@ const PERSONAL_ASSISTANT_MODEL: Model<"openai-completions"> = {
 const USER_MCP_SERVER_NAME = "user";
 const USER_MCP_RUNTIME_ID = "personal-assistant";
 const MCP_TOOL_DISCOVERY_TIMEOUT_MS = 3_000;
-const USER_PROFILE_COMPLETE_ONBOARDING_TOOL = `${USER_MCP_SERVER_NAME}.profile.complete_onboarding`;
-const USER_PROJECTS_CREATE_TOOL = `${USER_MCP_SERVER_NAME}.projects.create`;
-const GENERATION_MAX_STEPS = 4;
 
 type PersonalAssistantTurnResult = {
   assistantText: string;
   onboardingCompleted: boolean;
   projectCreated: boolean;
+  createdProjectId: string | null;
+  profileUpdated: boolean;
 };
 
 export class PersonalAssistantRuntime {
   private readonly agent: Agent;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Set<(event: RuntimeStreamEvent, signal?: AbortSignal) => Promise<void> | void>();
   private streamingAssistantText = "";
   private onboardingCompleted = false;
   private projectCreated = false;
+  private createdProjectId: string | null = null;
+  private profileUpdated = false;
+  private currentProfile: ViewerProfile;
+  private readonly successfulToolCallKeys = new Set<string>();
+  private readonly appliedProfileMutationKeys = new Set<string>();
+  private readonly runtimeDescriptors: RuntimeToolDescriptor[];
 
   static async create(input: {
     workspaceId: string;
@@ -68,15 +86,10 @@ export class PersonalAssistantRuntime {
     profile: ViewerProfile;
   }) {
     const descriptors = await resolveUserMcpTools();
-    const bridge: Pick<McpBridge, "callTool"> = {
-      callTool: async (_runtimeId, _serverName, toolName, argumentsJson) =>
-        callUserMcpTool(toolName, argumentsJson),
-    };
 
     return new PersonalAssistantRuntime({
       ...input,
       descriptors,
-      bridge,
     });
   }
 
@@ -87,33 +100,63 @@ export class PersonalAssistantRuntime {
       initialMessages: SessionMessage[];
       profile: ViewerProfile;
       descriptors: McpToolDescriptor[];
-      bridge: Pick<McpBridge, "callTool">;
     },
   ) {
-    const tools = createMcpAgentTools({
-      runtimeId: USER_MCP_RUNTIME_ID,
-      bridge: input.bridge,
-      descriptors: input.descriptors,
-    });
-
+    this.currentProfile = input.profile;
+    const runtimeDescriptors = buildPersonalRuntimeDescriptors(input.descriptors, allowLocalFileWrite(input.initialMessages));
+    this.runtimeDescriptors = runtimeDescriptors;
     this.agent = new Agent({
       initialState: {
         systemPrompt: "",
         model: PERSONAL_ASSISTANT_MODEL,
         messages: sessionMessagesToAgentMessages(input.initialMessages, PERSONAL_ASSISTANT_MODEL),
-        tools,
+        tools: buildAgentTools({
+          descriptors: runtimeDescriptors,
+          executeBackendTool: (toolName, args) => this.executeBackendTool(toolName, args),
+          executeLocalTool: callLocalTool,
+        }),
       },
       convertToLlm: (messages) => messages as Message[],
       streamFn: (_model, context, options) => this.streamTurn(context, options),
       toolExecution: "sequential",
+      beforeToolCall: async ({ toolCall }) => resolveRuntimeApproval({
+        toolName: toolCall.name,
+        emit: (event) => this.notifyListeners(event),
+      }),
+      afterToolCall: async ({ toolCall, result, isError }) => {
+        const toolCallKey = createToolCallKey(toolCall.name, toolCall.arguments);
+        if (!isError) {
+          this.successfulToolCallKeys.add(toolCallKey);
+        }
+        if (toolCall.name === "backend.profile.complete_onboarding" && !isError && !isSkippedMutationResult(result.details)) {
+          this.onboardingCompleted = true;
+          this.profileUpdated = true;
+          this.currentProfile = applyProfileMutation(this.currentProfile, result.details, {
+            onboarding_completed: true,
+            ...(readProfilePayload(toolCall.arguments) ?? {}),
+          });
+        }
+        if (toolCall.name === "backend.profile.update" && !isError && !isSkippedMutationResult(result.details)) {
+          this.profileUpdated = true;
+          this.currentProfile = applyProfileMutation(this.currentProfile, result.details, readProfilePayload(toolCall.arguments));
+        }
+        if ((toolCall.name === "backend.projects.create" || toolCall.name === "backend.projects_create") && !isError) {
+          this.projectCreated = true;
+          this.createdProjectId = readCreatedProjectId(result.details);
+        }
+
+        return {
+          content: result.content,
+          details: result.details,
+          isError,
+        };
+      },
     });
 
-    this.agent.subscribe(() => {
-      this.listeners.forEach((listener) => listener());
-    });
+    this.agent.subscribe((event, signal) => this.notifyListeners(event, signal));
   }
 
-  subscribe(listener: () => void) {
+  subscribe(listener: (event: RuntimeStreamEvent, signal?: AbortSignal) => Promise<void> | void) {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
@@ -128,8 +171,35 @@ export class PersonalAssistantRuntime {
     return this.streamingAssistantText;
   }
 
+  private notifyListeners(event: RuntimeStreamEvent, signal?: AbortSignal) {
+    this.listeners.forEach((listener) => {
+      void listener(event, signal);
+    });
+  }
+
   isStreaming() {
     return this.agent.state.isStreaming;
+  }
+
+  private async executeBackendTool(toolName: string, args: Record<string, unknown>) {
+    const workspaceArgs = injectWorkspaceId(toolName, args, this.input.workspaceId);
+    const prepared = preparePersonalBackendToolCall({
+      toolName,
+      args: workspaceArgs,
+      currentProfile: this.currentProfile,
+      appliedMutationKeys: this.appliedProfileMutationKeys,
+    });
+
+    if (prepared.skip) {
+      return buildSkippedProfileMutationResult(toolName, this.currentProfile);
+    }
+
+    const result = await callUserMcpTool(toolName, prepared.args);
+    if (!result.isError && prepared.dedupeKey) {
+      this.appliedProfileMutationKeys.add(prepared.dedupeKey);
+    }
+
+    return result;
   }
 
   getTranscriptAsSessionMessages() {
@@ -140,6 +210,9 @@ export class PersonalAssistantRuntime {
     this.streamingAssistantText = "";
     this.onboardingCompleted = false;
     this.projectCreated = false;
+    this.createdProjectId = null;
+    this.profileUpdated = false;
+    this.successfulToolCallKeys.clear();
     await this.agent.continue();
 
     const lastAssistant = [...this.agent.state.messages].reverse().find((message) => message.role === "assistant") as AssistantMessage | undefined;
@@ -149,6 +222,8 @@ export class PersonalAssistantRuntime {
       assistantText,
       onboardingCompleted: this.onboardingCompleted,
       projectCreated: this.projectCreated,
+      createdProjectId: this.createdProjectId,
+      profileUpdated: this.profileUpdated,
     };
   }
 
@@ -163,29 +238,26 @@ export class PersonalAssistantRuntime {
         return;
       }
 
-      if (latestMessage.role !== "user") {
+      if (latestMessage.role !== "user" && latestMessage.role !== "toolResult") {
         await emitText(stream, partial, "Я готов продолжить. Напишите, что нужно сделать дальше.", options);
         return;
       }
 
-      const transcript = context.messages;
-      const finalText = await runPersonalAssistantLoop({
+      const response = await completeWithStructuredTools({
         workspaceId: this.input.workspaceId,
         threadId: this.input.threadId,
-        profile: this.input.profile,
-        descriptors: this.input.descriptors,
-        messages: transcript,
-        onToolResult: (toolName, result) => {
-          if (toolName === "profile.complete_onboarding" && !result.isError) {
-            this.onboardingCompleted = true;
-          }
-          if (toolName === "projects.create" && !result.isError) {
-            this.projectCreated = true;
-          }
-        },
+        messages: buildPersonalLlmMessages(this.input.workspaceId, this.currentProfile, context.messages),
+        tools: this.runtimeDescriptors,
       });
 
-      await emitText(stream, partial, finalText, options);
+      if (shouldUseNarrationInsteadOfRepeatedToolCall(response.toolCalls, response.outputText, this.successfulToolCallKeys)) {
+        await emitText(stream, partial, response.outputText, options);
+        return;
+      }
+
+      await emitAssistantResponse(stream, partial, response.content, normalizeAssistantStopReason(response.finishReason), options, (value) => {
+        this.streamingAssistantText = value;
+      });
     })()
       .catch(async (error) => {
         await emitText(
@@ -273,58 +345,24 @@ async function callUserMcpTool(toolName: string, argumentsJson: Record<string, u
     serverName: USER_MCP_SERVER_NAME,
     toolName,
     content: Array.isArray(result.content) ? result.content as McpToolCallResult["content"] : [],
-    structuredContent: result.structuredContent,
+    structuredContent: result.structuredContent ?? null,
     isError: Boolean(result.isError),
   };
 }
 
-async function runPersonalAssistantLoop(input: {
-  workspaceId: string;
-  threadId: string;
-  profile: ViewerProfile;
-  descriptors: McpToolDescriptor[];
-  messages: Message[];
-  onToolResult: (toolName: string, result: McpToolCallResult) => void;
-}) {
-  const loopMessages = [...input.messages];
-
-  for (let step = 0; step < GENERATION_MAX_STEPS; step += 1) {
-    const response = await postLlmResponse({
-      workspace_id: input.workspaceId,
-      thread_id: input.threadId,
-      operation_kind: "generate_text",
-      messages: buildPersonalLlmMessages(input.profile, input.descriptors, input.workspaceId, loopMessages),
-    });
-
-    const outputText = response.output_text?.trim() ?? "";
-    const toolCall = parseToolCall(outputText);
-
-    if (!toolCall) {
-      return outputText || "Я готов продолжить. Напишите, что нужно сделать дальше.";
-    }
-
-    const toolArguments = injectWorkspaceId(toolCall.name, toolCall.arguments, input.workspaceId);
-    const toolResult = await callUserMcpTool(toolCall.name, toolArguments);
-    input.onToolResult(toolCall.name, toolResult);
-    loopMessages.push(buildToolResultMessage(toolCall.name, toolResult));
-  }
-
-  return "Я выполнил необходимые действия через инструменты. Уточните следующий шаг, если нужно продолжить.";
-}
-
 function buildPersonalLlmMessages(
-  profile: ViewerProfile,
-  descriptors: McpToolDescriptor[],
   workspaceId: string,
+  profile: ViewerProfile,
   messages: Message[],
 ): LlmRequestMessage[] {
   const systemPrompt = [
     "Ты SA-Agent, персональный ассистент рабочего пространства.",
     "Отвечай на языке пользователя, обычно на русском.",
-    "Если для ответа нужен инструмент, верни только JSON без markdown и без пояснений в формате:",
-    '{"tool_call":{"name":"tool.name","arguments":{}}}',
-    "После получения результата инструмента дай нормальный user-facing ответ и не показывай сырой JSON.",
-    `Для projects.create всегда подставляй payload.workspace_id = "${workspaceId}".`,
+    "Если для ответа нужен инструмент, вызывай подходящий tool из доступного каталога.",
+    "После получения результата инструмента дай нормальный user-facing ответ и не показывай внутренние payload.",
+    "Локальную запись файла выполняй только когда пользователь явно попросил сохранить файл.",
+    `Используй active workspace_id=${workspaceId} для операций рабочего пространства и создания проектов.`,
+    `Активное рабочее пространство: ${JSON.stringify({ workspace_id: workspaceId })}`,
     `Профиль пользователя: ${JSON.stringify({
       display_name: profile.display_name,
       preferred_user_name: profile.preferred_user_name,
@@ -333,121 +371,44 @@ function buildPersonalLlmMessages(
       onboarding_completed: profile.onboarding_completed,
       onboarding_payload: profile.onboarding_payload,
     })}`,
-    `Доступные инструменты: ${JSON.stringify(descriptors.map((item) => ({
-      name: item.name,
-      description: item.description,
-      inputSchema: item.inputSchema,
-    })))}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   return [
     { role: "system", content: systemPrompt },
-    ...messages.map(mapLlmMessage),
+    ...messages.flatMap((message) => {
+      const mapped = mapLlmMessage(message);
+      return mapped ? [mapped] : [];
+    }),
   ];
 }
 
-function mapLlmMessage(message: Message): LlmRequestMessage {
+function mapLlmMessage(message: Message): LlmRequestMessage | null {
   if (message.role === "user") {
     return { role: "user", content: readUserText(message) };
   }
 
   if (message.role === "assistant") {
-    return { role: "assistant", content: readAssistantText(message) };
+    const text = readAssistantText(message);
+    return text.trim().length > 0 ? { role: "assistant", content: text } : null;
   }
 
   if (message.role === "toolResult") {
-    return {
-      role: "system",
-      content: `TOOL_RESULT ${message.toolName} success=${String(!message.isError)} ${JSON.stringify(message.details ?? null)}`,
-    };
+    return mapToolResultToPromptMessage(message, {
+      normalizeToolName: normalizeToolResultName,
+      omitToolNames: new Set(["backend.profile.update", "backend.profile.complete_onboarding"]),
+    });
   }
 
   return { role: "system", content: JSON.stringify(message) };
 }
 
-function parseToolCall(text: string) {
-  const normalized = stripJsonFences(text);
-  const candidates = [normalized, ...extractJsonObjectCandidates(normalized)];
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as {
-        tool_call?: {
-          name?: unknown;
-          arguments?: unknown;
-        };
-      };
-      if (!parsed.tool_call || typeof parsed.tool_call.name !== "string") {
-        continue;
-      }
-
-      return {
-        name: parsed.tool_call.name,
-        arguments:
-          typeof parsed.tool_call.arguments === "object" && parsed.tool_call.arguments !== null
-            ? (parsed.tool_call.arguments as Record<string, unknown>)
-            : {},
-      };
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-function stripJsonFences(text: string) {
-  return text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "").trim();
-}
-
-function extractJsonObjectCandidates(text: string) {
-  const candidates: string[] = [];
-
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "{") {
-      continue;
-    }
-
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let end = index; end < text.length; end += 1) {
-      const char = text[end];
-
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (char === "\\") {
-          escaped = true;
-        } else if (char === "\"") {
-          inString = false;
-        }
-        continue;
-      }
-
-      if (char === "\"") {
-        inString = true;
-        continue;
-      }
-
-      if (char === "{") {
-        depth += 1;
-      } else if (char === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          candidates.push(text.slice(index, end + 1));
-          break;
-        }
-      }
-    }
-  }
-
-  return candidates;
-}
-
 function injectWorkspaceId(toolName: string, argumentsJson: Record<string, unknown>, workspaceId: string) {
-  if (toolName !== "projects.create") {
+  if (
+    toolName !== "projects.create" &&
+    toolName !== "projects_create" &&
+    toolName !== "backend.projects.create" &&
+    toolName !== "backend.projects_create"
+  ) {
     return argumentsJson;
   }
 
@@ -461,20 +422,6 @@ function injectWorkspaceId(toolName: string, argumentsJson: Record<string, unkno
   return {
     ...argumentsJson,
     payload,
-  };
-}
-
-function buildToolResultMessage(toolName: string, result: McpToolCallResult): Extract<Message, { role: "toolResult" }> {
-  return {
-    role: "toolResult",
-    toolCallId: `tool-result-${Date.now()}`,
-    toolName: `${USER_MCP_SERVER_NAME}.${toolName}`,
-    content: [],
-    isError: Boolean(result.isError),
-    details: {
-      structuredContent: result.structuredContent ?? null,
-    },
-    timestamp: Date.now(),
   };
 }
 
@@ -514,12 +461,58 @@ function buildPartialAssistantMessage(): AssistantMessage {
   };
 }
 
+async function emitAssistantResponse(
+  stream: AssistantMessageEventStream,
+  partial: AssistantMessage,
+  content: Array<TextContent | ToolCall>,
+  stopReason: "stop" | "length" | "toolUse",
+  options: StreamOptions | undefined,
+  setStreamingAssistantText: (value: string) => void,
+) {
+  const toolCalls = content.filter((item): item is ToolCall => item.type === "toolCall");
+
+  if (toolCalls.length === 0) {
+    const text = content
+      .filter((item): item is TextContent => item.type === "text")
+      .map((item) => item.text)
+      .join("");
+    await emitText(stream, partial, text, options, stopReason === "length" ? "length" : "stop", setStreamingAssistantText);
+    return;
+  }
+
+  setStreamingAssistantText("");
+  stream.push({ type: "start", partial });
+  partial.content = content;
+
+  for (const [contentIndex, item] of content.entries()) {
+    if (item.type !== "toolCall") {
+      continue;
+    }
+
+    stream.push({ type: "toolcall_start", contentIndex, partial });
+    stream.push({ type: "toolcall_end", contentIndex, toolCall: item, partial });
+  }
+
+  partial.stopReason = stopReason;
+  stream.push({
+    type: "done",
+    reason: stopReason,
+    message: {
+      ...partial,
+      content,
+      stopReason,
+    },
+  });
+  stream.end();
+}
+
 async function emitText(
   stream: AssistantMessageEventStream,
   partial: AssistantMessage,
   text: string,
   options?: StreamOptions,
   stopReason: "stop" | "length" = "stop",
+  setStreamingAssistantText?: (value: string) => void,
 ) {
   stream.push({ type: "start", partial });
   const content: TextContent = { type: "text", text: "" };
@@ -531,6 +524,9 @@ async function emitText(
       break;
     }
     content.text += chunk;
+    if (setStreamingAssistantText) {
+      setStreamingAssistantText(content.text);
+    }
     stream.push({ type: "text_delta", contentIndex: 0, delta: chunk, partial });
     await waitMs(14, options?.signal);
   }
@@ -549,22 +545,139 @@ async function emitText(
   stream.end();
 }
 
-function matchFirst(text: string, patterns: RegExp[]) {
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      return match[1].trim();
-    }
-    if (match?.[0]) {
-      return match[0].trim();
-    }
-  }
-  return null;
-}
-
 function splitTextForReveal(value: string) {
   const parts = value.match(/.{1,12}(\s|$)|\S+/g);
   return parts && parts.length > 0 ? parts : [value];
+}
+
+function normalizeToolResultName(toolName: string) {
+  if (toolName.startsWith(`${USER_MCP_SERVER_NAME}.`)) {
+    return `backend.${toolName.slice(`${USER_MCP_SERVER_NAME}.`.length)}`;
+  }
+
+  return toolName;
+}
+
+function normalizeAssistantStopReason(stopReason: string) {
+  return stopReason === "length" || stopReason === "toolUse" ? stopReason : "stop";
+}
+
+function shouldUseNarrationInsteadOfRepeatedToolCall(
+  toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> | null | undefined,
+  outputText: string,
+  successfulToolCallKeys: Set<string>,
+) {
+  return Boolean(
+    outputText.trim().length > 0
+    && Array.isArray(toolCalls)
+    && toolCalls.length > 0
+    && toolCalls.every((toolCall) => successfulToolCallKeys.has(createToolCallKey(toolCall.name, toolCall.arguments))),
+  );
+}
+
+function createToolCallKey(toolName: string, args: unknown) {
+  return `${toolName}:${stableJson(args)}`;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function readProfilePayload(args: unknown) {
+  if (!args || typeof args !== "object") {
+    return null;
+  }
+  const payload = (args as Record<string, unknown>).payload;
+  return payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
+}
+
+function applyProfileMutation(
+  currentProfile: ViewerProfile,
+  details: unknown,
+  fallbackPatch?: Record<string, unknown> | null,
+): ViewerProfile {
+  const canonical = readCanonicalProfile(details);
+  if (canonical) {
+    return {
+      ...currentProfile,
+      ...canonical,
+      updated_at: canonical.updated_at ?? currentProfile.updated_at,
+    };
+  }
+
+  if (!fallbackPatch) {
+    return currentProfile;
+  }
+
+  return {
+    ...currentProfile,
+    display_name: readOptionalString(fallbackPatch.display_name, currentProfile.display_name),
+    preferred_user_name: readOptionalString(fallbackPatch.preferred_user_name, currentProfile.preferred_user_name),
+    preferred_agent_name: readOptionalString(fallbackPatch.preferred_agent_name, currentProfile.preferred_agent_name),
+    activity_domain: readOptionalString(fallbackPatch.activity_domain, currentProfile.activity_domain),
+    onboarding_completed: typeof fallbackPatch.onboarding_completed === "boolean" ? fallbackPatch.onboarding_completed : currentProfile.onboarding_completed,
+    onboarding_payload: readOptionalRecord(fallbackPatch.onboarding_payload, currentProfile.onboarding_payload ?? null),
+  };
+}
+
+function readCanonicalProfile(details: unknown) {
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+  const result = (details as Record<string, unknown>).result;
+  return result && typeof result === "object" ? result as Partial<ViewerProfile> : null;
+}
+
+function readOptionalString(value: unknown, fallback: string | null) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function readOptionalRecord(
+  value: unknown,
+  fallback: Record<string, unknown> | null,
+) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : fallback;
+}
+
+function buildPersonalRuntimeDescriptors(descriptors: McpToolDescriptor[], includeLocalFileWrite: boolean) {
+  return buildRuntimeToolCatalog({
+    backendTools: descriptors,
+    localTools: includeLocalFileWrite ? [
+      {
+        name: "files.write_file",
+        description: "Write a local file in the desktop workspace",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["path", "content"],
+        },
+      },
+    ] : [],
+  });
+}
+
+function readCreatedProjectId(details: unknown) {
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+  if (typeof (details as { project_id?: unknown }).project_id === "string") {
+    return (details as { project_id: string }).project_id;
+  }
+  const result = (details as { result?: unknown }).result;
+  if (result && typeof result === "object" && typeof (result as { project_id?: unknown }).project_id === "string") {
+    return (result as { project_id: string }).project_id;
+  }
+  return null;
 }
 
 function waitMs(durationMs: number, signal?: AbortSignal) {

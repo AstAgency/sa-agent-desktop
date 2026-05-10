@@ -25,9 +25,12 @@ describe("PersonalAssistantRuntime", () => {
 
         if (llmBodies.length === 1) {
           return jsonResponse({
-            output_text: JSON.stringify({
-              tool_call: {
-                name: "profile.complete_onboarding",
+            output_text: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                name: "backend.profile.complete_onboarding",
                 arguments: {
                   idempotency_key: "profile-complete-1",
                   payload: {
@@ -37,7 +40,7 @@ describe("PersonalAssistantRuntime", () => {
                   },
                 },
               },
-            }),
+            ],
           });
         }
 
@@ -98,9 +101,11 @@ describe("PersonalAssistantRuntime", () => {
     const result = await runtime.continueFromTranscript();
 
     expect(llmBodies).toHaveLength(2);
+    expect(llmBodies[0]?.tool_choice).toBe("auto");
     expect(mcpMethods).toContain("tools/list");
     expect(mcpMethods).toContain("tools/call");
     expect(result.onboardingCompleted).toBe(true);
+    expect(result.profileUpdated).toBe(true);
     expect(result.assistantText).toContain("Онбординг завершен");
   });
 
@@ -115,9 +120,12 @@ describe("PersonalAssistantRuntime", () => {
 
         if (llmBodies.length === 1) {
           return jsonResponse({
-            output_text: JSON.stringify({
-              tool_call: {
-                name: "projects.create",
+            output_text: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                name: "backend.projects.create",
                 arguments: {
                   idempotency_key: "project-create-1",
                   payload: {
@@ -127,7 +135,7 @@ describe("PersonalAssistantRuntime", () => {
                   },
                 },
               },
-            }),
+            ],
           });
         }
 
@@ -168,7 +176,8 @@ describe("PersonalAssistantRuntime", () => {
           result: {
             content: [{ type: "text", text: "created" }],
             structuredContent: {
-              project_id: "project-1",
+              ok: true,
+              result: { project_id: "project-1" },
             },
             isError: false,
           },
@@ -190,45 +199,37 @@ describe("PersonalAssistantRuntime", () => {
     const result = await runtime.continueFromTranscript();
 
     expect(llmBodies).toHaveLength(2);
+    expect(llmBodies[0]?.tool_choice).toBe("auto");
     expect(calledToolNames).toEqual(["projects.create"]);
     expect(result.projectCreated).toBe(true);
+    expect(result.createdProjectId).toBe("project-1");
     expect(result.assistantText).toContain("Создал проект");
   });
 
-  it("extracts tool_call from mixed prose plus json and hides raw tool payload from the final assistant answer", async () => {
+  it("executes structured backend tool_calls without parsing output_text", async () => {
+    const llmBodies: Array<Record<string, unknown>> = [];
+
     fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
       if (String(input).endsWith("/v1/llm/responses")) {
         const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-        const messages = Array.isArray(payload.messages) ? payload.messages : [];
-        const hasToolResult = messages.some((message) =>
-          typeof message === "object"
-          && message !== null
-          && String((message as { content?: unknown }).content ?? "").includes("TOOL_RESULT"),
-        );
+        llmBodies.push(payload);
 
-        if (!hasToolResult) {
+        if (llmBodies.length === 1) {
           return jsonResponse({
-            output_text: [
-              "Отлично, создаём проект.",
-              JSON.stringify({
-                tool_call: {
-                  name: "projects.create",
-                  arguments: {
-                    idempotency_key: "project-create-2",
-                    payload: {
-                      name: "Agent Platform MVP",
-                      key: "agent-platform-mvp",
-                      description: "Коммерческая платформа для AI-агентов.",
-                    },
-                  },
-                },
-              }),
-            ].join("\n\n"),
+            output_text: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                name: "backend.profile.update",
+                arguments: { payload: { preferred_user_name: "Мкртчян" } },
+              },
+            ],
           });
         }
 
         return jsonResponse({
-          output_text: "Проект создан. Теперь можно продолжать настройку контекста.",
+          output_text: "Профиль обновлен. Новое имя сохранено.",
         });
       }
 
@@ -239,7 +240,7 @@ describe("PersonalAssistantRuntime", () => {
           jsonrpc: "2.0",
           id: "tools-list-1",
           result: {
-            tools: [{ name: "projects.create", description: "Create project", inputSchema: { type: "object" } }],
+            tools: [{ name: "profile.update", description: "Update profile", inputSchema: { type: "object" } }],
           },
         });
       }
@@ -263,14 +264,190 @@ describe("PersonalAssistantRuntime", () => {
     const runtime = await PersonalAssistantRuntime.create({
       workspaceId: "ws-1",
       threadId: "assistant-thread-1",
-      initialMessages: [buildMessage("user", "Создай проект для платформы AI-агентов.")],
+      initialMessages: [buildMessage("user", "Обнови профиль")],
       profile: buildProfile({ onboarding_completed: true }),
     });
 
     const result = await runtime.continueFromTranscript();
 
-    expect(result.assistantText).toBe("Проект создан. Теперь можно продолжать настройку контекста.");
+    expect(llmBodies[0]?.tool_choice).toBe("auto");
+    expect(llmBodies[0]?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "function",
+          function: expect.objectContaining({ name: "backend.profile.update" }),
+        }),
+      ]),
+    );
+    expect(result.assistantText).toBe("Профиль обновлен. Новое имя сохранено.");
     expect(result.assistantText).not.toContain('"tool_call"');
+  });
+
+  it("executes local file-write requests when the user explicitly asks to save a file", async () => {
+    const llmBodies: Array<Record<string, unknown>> = [];
+    const writeFiles = vi.fn().mockResolvedValue({ ok: true, rootPath: "/tmp/agent-files" });
+    window.saAgent = {
+      ...window.saAgent,
+      files: {
+        writeFiles,
+        openFolder: vi.fn(),
+      },
+    };
+
+    fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/llm/responses")) {
+        const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        llmBodies.push(payload);
+
+        if (llmBodies.length === 1) {
+          return jsonResponse({
+            output_text: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                name: "local.files.write_file",
+                arguments: {
+                  path: "notes/todo.md",
+                  content: "# TODO",
+                },
+              },
+            ],
+          });
+        }
+
+        return jsonResponse({
+          output_text: "Локальный файл сохранён.",
+        });
+      }
+
+      const payload = JSON.parse(String(init?.body ?? "{}")) as { method?: string; params?: Record<string, unknown> };
+
+      if (payload.method === "tools/list") {
+        return jsonResponse({
+          jsonrpc: "2.0",
+          id: "tools-list-1",
+          result: {
+            tools: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected MCP request: ${JSON.stringify(payload)}`);
+    });
+
+    const runtime = await PersonalAssistantRuntime.create({
+      workspaceId: "ws-1",
+      threadId: "assistant-thread-1",
+      initialMessages: [buildMessage("user", "Создай локальный файл notes/todo.md с текстом # TODO")],
+      profile: buildProfile({ onboarding_completed: true }),
+    });
+
+    const result = await runtime.continueFromTranscript();
+
+    expect(writeFiles).toHaveBeenCalledWith([{ relativePath: "notes/todo.md", content: "# TODO" }]);
+    expect(llmBodies[0]?.tool_choice).toBe("auto");
+    expect(result.assistantText).toBe("Локальный файл сохранён.");
+    expect(result.assistantText).not.toContain('"tool_call"');
+    expect(JSON.stringify(llmBodies[1]?.messages ?? [])).toContain("local.files.write_file");
+  });
+
+  it("uses final narration instead of re-executing a repeated successful profile update", async () => {
+    const toolCalls: Array<Record<string, unknown>> = [];
+    const llmBodies: Array<Record<string, unknown>> = [];
+
+    fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/llm/responses")) {
+        const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        llmBodies.push(payload);
+
+        if (llmBodies.length === 1) {
+          return jsonResponse({
+            output_text: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                name: "backend.profile.update",
+                arguments: {
+                  idempotency_key: "profile-update-1",
+                  payload: { preferred_user_name: "Вахтанг", preferred_agent_name: "Фрунзик" },
+                },
+              },
+            ],
+          });
+        }
+
+        return jsonResponse({
+          output_text: "Отлично, всё сохранил. Давай завершим онбординг и перейдём к делу.",
+          tool_calls: [
+            {
+              id: "call-2",
+              type: "function",
+              name: "backend.profile.update",
+              arguments: {
+                idempotency_key: "profile-update-1",
+                payload: { preferred_user_name: "Вахтанг", preferred_agent_name: "Фрунзик" },
+              },
+            },
+          ],
+        });
+      }
+
+      const payload = JSON.parse(String(init?.body ?? "{}")) as { method?: string; params?: Record<string, unknown> };
+      if (payload.method === "tools/list") {
+        return jsonResponse({
+          jsonrpc: "2.0",
+          id: "tools-list-1",
+          result: {
+            tools: [{ name: "profile.update", description: "Update profile", inputSchema: { type: "object" } }],
+          },
+        });
+      }
+      if (payload.method === "tools/call") {
+        toolCalls.push(payload.params?.arguments as Record<string, unknown>);
+        return jsonResponse({
+          jsonrpc: "2.0",
+          id: "tool-call-1",
+          result: {
+            content: [{ type: "text", text: "updated" }],
+            structuredContent: {
+              ok: true,
+              result: {
+                user_id: "user-1",
+                email: "demo@sa-agent.local",
+                display_name: "Demo User",
+                preferred_user_name: "Вахтанг",
+                preferred_agent_name: "Фрунзик",
+                activity_domain: "IT",
+                onboarding_completed: false,
+                onboarding_payload: null,
+                onboarding_completed_at: null,
+                created_at: "2026-05-10T00:00:00.000Z",
+                updated_at: "2026-05-10T00:00:01.000Z",
+              },
+            },
+            isError: false,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected request: ${JSON.stringify(payload)}`);
+    });
+
+    const runtime = await PersonalAssistantRuntime.create({
+      workspaceId: "ws-1",
+      threadId: "assistant-thread-1",
+      initialMessages: [buildMessage("user", "Сохрани мои предпочтения по имени.")],
+      profile: buildProfile({ onboarding_completed: false }),
+    });
+
+    const result = await runtime.continueFromTranscript();
+
+    expect(toolCalls).toHaveLength(1);
+    expect(result.profileUpdated).toBe(true);
+    expect(result.assistantText).toContain("всё сохранил");
+    expect(JSON.stringify(llmBodies[1]?.messages ?? [])).not.toContain('"content":""');
   });
 });
 

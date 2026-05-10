@@ -8,7 +8,6 @@ export function WorkspaceShellFrame(input: {
   profile: WorkspaceShellProps["profile"];
   onboarding: WorkspaceShellProps["onboarding"];
   project: WorkspaceShellProps["project"];
-  projects: WorkspaceShellProps["projects"];
   projectAgents: ProjectAgentRecord[];
   state: ReturnType<typeof useWorkspaceShellState>;
   visibleMessages: Parameters<typeof WorkspaceShellLayout>[0]["mainContentProps"]["visibleMessages"];
@@ -24,21 +23,23 @@ export function WorkspaceShellFrame(input: {
   onOpenAgentFilesFolder: () => Promise<void>;
   onCancelExecution: (executionId: string) => Promise<void>;
   onSend: () => void;
+  onCreateSession: () => Promise<void>;
+  onCreateProject: () => void;
+  onSelectSession: (sessionId: string, projectId: string | null) => Promise<void>;
   onSelectProject: WorkspaceShellProps["onSelectProject"];
   onOpenSettings: WorkspaceShellProps["onOpenSettings"];
   onSelectProjectAgent: (projectAgentId: string) => void;
   onToggleNav: () => void;
   onSelectMode: Parameters<typeof WorkspaceShellLayout>[0]["onSelectMode"];
-  onCreateProject: () => void;
   onToggleContext: () => void;
   onOpenAssistantOverlay: Parameters<typeof WorkspaceShellLayout>[0]["onOpenAssistantOverlay"];
+  sessionTree: Parameters<typeof WorkspaceShellLayout>[0]["sessionTree"];
 }) {
   return (
     <WorkspaceShellLayout
       language={input.language}
       onboarding={input.onboarding ? { kind: input.onboarding.kind } : null}
       project={input.project}
-      projects={input.projects}
       projectAgents={input.projectAgents}
       activeProjectAgentId={input.state.activeProjectAgentId}
       resolvedWorkspaceMode={input.state.resolvedWorkspaceMode}
@@ -51,12 +52,16 @@ export function WorkspaceShellFrame(input: {
       onSelectProjectAgent={input.onSelectProjectAgent}
       onToggleNav={input.onToggleNav}
       onSelectMode={input.onSelectMode}
-      onSelectProject={input.onSelectProject}
+      onSelectSession={input.onSelectSession}
+      onCreateSession={input.onCreateSession}
       onCreateProject={input.onCreateProject}
+      onSelectProject={input.onSelectProject}
       onToggleContext={input.onToggleContext}
       onOpenSettings={input.onOpenSettings}
       onOpenAssistantOverlay={input.onOpenAssistantOverlay}
       onDismissPopup={input.state.dismissLockedPopup}
+      isBlockingOnboarding={input.state.isBlockingOnboarding}
+      sessionTree={input.sessionTree}
     />
   );
 }

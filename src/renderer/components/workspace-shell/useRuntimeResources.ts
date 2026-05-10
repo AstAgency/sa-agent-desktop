@@ -36,6 +36,10 @@ export function useRuntimeResources(input: {
   const [projectCommitments, setProjectCommitments] = useState<CommitmentRecord[]>([]);
 
   useEffect(() => {
+    onToolMessage(null);
+  }, [activeAgentKey, activeProjectAgentId, onToolMessage, project?.id]);
+
+  useEffect(() => {
     if (!activeAgentKey) {
       setActiveAgentProfile(null);
       setActiveAgentMcps(null);
@@ -55,6 +59,7 @@ export function useRuntimeResources(input: {
         setActiveAgentMcps(mcps);
         setActiveProjectAgent(projectAgent);
         setCapabilities(nextCapabilities);
+        onToolMessage(null);
         onActiveProjectAgentIdResolved(projectAgent?.id ?? null);
       })
       .catch(() => {
@@ -73,8 +78,6 @@ export function useRuntimeResources(input: {
 
   useEffect(() => {
     if (!project?.id) {
-      setDocuments([]);
-      setProjectAgents([]);
       setProjectThreads([]);
       setProjectCommitments([]);
       return;
@@ -89,18 +92,46 @@ export function useRuntimeResources(input: {
     ]).then(([nextDocuments, nextAgents, nextThreads, nextCommitments]) => {
       if (!isActive) return;
       setDocuments(nextDocuments);
-      setProjectAgents(nextAgents);
       setProjectThreads(nextThreads);
       setProjectCommitments(nextCommitments);
-      onActiveProjectAgentIdResolved(
-        activeProjectAgentId && nextAgents.some((agent) => agent.id === activeProjectAgentId)
-          ? activeProjectAgentId
-          : nextAgents[0]?.id ?? null,
-      );
     });
 
     return () => {
       isActive = false;
+    };
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (!project?.id) {
+      setProjectAgents([]);
+      return;
+    }
+
+    let isActive = true;
+    let retryTimer: number | null = null;
+
+    const loadProjectAgents = async (attempt = 0) => {
+      const nextAgents = await getProjectAgents(project.id).catch(() => []);
+      if (!isActive) return;
+      setProjectAgents(nextAgents);
+      const resolvedProjectAgentId =
+        activeProjectAgentId && nextAgents.some((agent) => agent.id === activeProjectAgentId)
+          ? activeProjectAgentId
+          : nextAgents[0]?.id ?? null;
+      onActiveProjectAgentIdResolved(resolvedProjectAgentId);
+
+      if (!resolvedProjectAgentId && attempt < 6) {
+        retryTimer = window.setTimeout(() => {
+          void loadProjectAgents(attempt + 1);
+        }, 300);
+      }
+    };
+
+    void loadProjectAgents();
+
+    return () => {
+      isActive = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, [activeProjectAgentId, onActiveProjectAgentIdResolved, project?.id]);
 
