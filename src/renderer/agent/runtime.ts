@@ -18,7 +18,7 @@ import { buildPrompt } from "./prompt-builder";
 import { getLiveMessages } from "./live-messages";
 import { retrieveRelevantSummaries } from "./search";
 import { maybeSummarize } from "./summarizer";
-import { buildWorkspaceTools } from "./tools";
+import { buildWorkspaceTools, type WorkspaceToolActions } from "./tools";
 import type {
   Agent as AgentRecord,
   ChatMessage,
@@ -54,6 +54,7 @@ export type SessionRuntimeInput = {
   agent: AgentRecord | null;
   messages: Message[];
   summaries: Summary[];
+  toolActions: WorkspaceToolActions;
   model?: string;
 };
 
@@ -90,7 +91,7 @@ export class SessionRuntime {
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
-    this.tools = buildWorkspaceTools(input.scope);
+    this.tools = buildWorkspaceTools(input.scope, input.toolActions);
     this.state = {
       messages: [...input.messages],
       summaries: [...input.summaries],

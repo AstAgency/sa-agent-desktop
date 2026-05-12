@@ -127,6 +127,16 @@ export function setSelectedAgent(agentKey: string | null) {
 }
 
 export async function createProjectAndSelect(input: { name: string; description?: string }) {
+  const project = await createProjectFromInput(input);
+  setState((state) => ({ ...state, selection: { kind: "new-project", projectId: project.id } }));
+  return project;
+}
+
+export async function createProjectViaTool(input: { name: string; description?: string }) {
+  return createProjectFromInput(input);
+}
+
+async function createProjectFromInput(input: { name: string; description?: string }) {
   const projectKey = input.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -141,7 +151,6 @@ export async function createProjectAndSelect(input: { name: string; description?
     ...state,
     projects: [...state.projects, project],
     projectSessions: { ...state.projectSessions, [project.id]: [] },
-    selection: { kind: "new-project", projectId: project.id },
   }));
   return project;
 }
@@ -283,6 +292,11 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     agent,
     messages,
     summaries,
+    toolActions: {
+      updateGlobalMemory: saveGlobalMemory,
+      updateProjectMemory: saveProjectMemory,
+      createProject: createProjectViaTool,
+    },
   });
 
   const unsubscribe = runtime.subscribe((runtimeState) => {

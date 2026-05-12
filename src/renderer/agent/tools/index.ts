@@ -1,12 +1,18 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
 import { getBridge } from "../../lib/bridge";
-import type { WorkspaceScope } from "../../lib/types";
+import type { Project, WorkspaceScope } from "../../lib/types";
 
 type ToolDefinition = AgentTool;
 
 const DEFAULT_PYTHON_TIMEOUT_MS = 60_000;
 const MAX_LIST_ENTRIES = 200;
+
+export type WorkspaceToolActions = {
+  updateGlobalMemory: (content: string) => Promise<void>;
+  updateProjectMemory: (projectId: string, content: string) => Promise<void>;
+  createProject: (input: { name: string; description?: string }) => Promise<Project>;
+};
 
 function textResult(text: string, details?: Record<string, unknown>) {
   return {
@@ -15,7 +21,10 @@ function textResult(text: string, details?: Record<string, unknown>) {
   };
 }
 
-export function buildWorkspaceTools(scope: WorkspaceScope): ToolDefinition[] {
+export function buildWorkspaceTools(
+  scope: WorkspaceScope,
+  actions: WorkspaceToolActions,
+): ToolDefinition[] {
   const fs = getBridge().fs;
   const python = getBridge().python;
 
@@ -145,7 +154,88 @@ export function buildWorkspaceTools(scope: WorkspaceScope): ToolDefinition[] {
     },
   };
 
-  return [readFileTool, writeFileTool, editFileTool, listFilesTool, runPythonTool];
+  const updateGlobalMemoryTool: ToolDefinition = {
+    name: "update_global_memory",
+    label: "Update global memory",
+    description:
+      "Overwrite the user's global memory note that is injected into every prompt. Use this to persist long-lived facts about the user (preferences, role, tools, current focus).",
+    parameters: Type.Object(
+      {
+        content: Type.String({ description: "New full content of the global memory" }),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const content = pickString(args, "content");
+      await actions.updateGlobalMemory(content);
+      return textResult(`Updated global_memory (${content.length} chars)`, {
+        bytes: content.length,
+      });
+    },
+  };
+
+  const createProjectTool: ToolDefinition = {
+    name: "create_project",
+    label: "Create project",
+    description:
+      "Create a new project belonging to the current profile. Returns the project id and key. Only available in global sessions — in a project session this tool is not registered.",
+    parameters: Type.Object(
+      {
+        name: Type.String({ description: "Human-readable project name" }),
+        description: Type.Optional(
+          Type.String({ description: "Optional short description" }),
+        ),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const name = pickString(args, "name");
+      const argRecord = (args ?? {}) as Record<string, unknown>;
+      const description =
+        typeof argRecord.description === "string" ? argRecord.description : undefined;
+      const project = await actions.createProject({ name, description });
+      return textResult(
+        `Created project ${project.name} (id=${project.id})`,
+        { id: project.id, name: project.name },
+      );
+    },
+  };
+
+  const updateProjectMemoryTool: ToolDefinition = {
+    name: "update_project_memory",
+    label: "Update project memory",
+    description:
+      "Overwrite the project_memory of the current project. Only available inside a project session.",
+    parameters: Type.Object(
+      {
+        content: Type.String({ description: "New full content of the project memory" }),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      if (scope.kind !== "project") {
+        throw new Error("update_project_memory is only available in a project session");
+      }
+      const content = pickString(args, "content");
+      await actions.updateProjectMemory(scope.projectId, content);
+      return textResult(`Updated project_memory (${content.length} chars)`, {
+        project_id: scope.projectId,
+        bytes: content.length,
+      });
+    },
+  };
+
+  const tools: ToolDefinition[] = [
+    readFileTool,
+    writeFileTool,
+    editFileTool,
+    listFilesTool,
+    runPythonTool,
+    updateGlobalMemoryTool,
+  ];
+  if (scope.kind === "global") tools.push(createProjectTool);
+  if (scope.kind === "project") tools.push(updateProjectMemoryTool);
+  return tools;
 }
 
 export function describeToolsForPrompt(tools: ToolDefinition[]): string {
