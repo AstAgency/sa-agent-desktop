@@ -7,20 +7,24 @@ import {
   type Context,
   type Message as PiMessage,
   type Model,
+  type StopReason,
   type StreamOptions,
   type TextContent,
+  type ToolCall as PiToolCall,
+  type UserMessage,
 } from "@earendil-works/pi-ai";
-import { streamChatCompletion } from "../lib/api";
+import { appendMessage, streamChatCompletion } from "../lib/api";
 import { buildPrompt } from "./prompt-builder";
 import { getLiveMessages } from "./live-messages";
 import { retrieveRelevantSummaries } from "./search";
 import { maybeSummarize } from "./summarizer";
-import { buildWorkspaceTools, describeToolsForPrompt } from "./tools";
-import { appendMessage } from "../lib/api";
+import { buildWorkspaceTools } from "./tools";
 import type {
   Agent as AgentRecord,
   ChatMessage,
   Message,
+  OpenAIToolCallRecord,
+  OpenAIToolDefinition,
   Profile,
   Project,
   Summary,
@@ -67,18 +71,22 @@ export type RuntimeListener = (state: SessionRuntimeState) => void;
  * - in-memory mirror of messages / summaries for the active session
  * - a pi-agent-core Agent instance configured with workspace tools
  * - the conversational loop: append user msg → embed → search → build prompt
- *   → stream LLM → append assistant msg → maybe summarize.
+ *   → stream LLM → execute tools → repeat until assistant stops → maybe summarize.
+ *
+ * Persistence is driven by Agent lifecycle events: every assistant message and
+ * every tool-result message is appended to the backend through `message_end`.
  */
 export class SessionRuntime {
   private readonly agent: Agent;
   private readonly tools: AgentTool[];
   private state: SessionRuntimeState;
   private readonly listeners = new Set<RuntimeListener>();
-  private currentTurnUserMessage: Message | null = null;
-  private currentTurnAssistantText = "";
-  private currentTurnTotalTokens = 0;
   private model: string;
   private inflightAbort: AbortController | null = null;
+  private currentTurnUserText = "";
+  private streamingAssistantText = "";
+  private readonly persistedMessageIds = new Set<string>();
+  private readonly agentEventUnsubscribe: () => void;
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
@@ -89,17 +97,20 @@ export class SessionRuntime {
       streamingAssistantText: "",
       isStreaming: false,
     };
+    for (const message of input.messages) this.persistedMessageIds.add(message.id);
 
     this.agent = new Agent({
       initialState: {
         systemPrompt: "",
         model: BACKEND_MODEL,
-        messages: [],
+        messages: hydrateAgentMessages(input.messages),
         tools: this.tools,
       },
       convertToLlm: (messages) => messages as PiMessage[],
       streamFn: (model, context, options) => this.streamFromBackend(model, context, options),
     });
+
+    this.agentEventUnsubscribe = this.agent.subscribe((event) => this.onAgentEvent(event));
   }
 
   subscribe(listener: RuntimeListener): () => void {
@@ -120,50 +131,43 @@ export class SessionRuntime {
     this.agent.abort();
   }
 
-  async sendUserMessage(content: string): Promise<{ assistant: Message }> {
+  dispose() {
+    this.agentEventUnsubscribe();
+    this.abort();
+  }
+
+  async sendUserMessage(content: string): Promise<void> {
     const trimmed = content.trim();
     if (trimmed.length === 0) throw new Error("Empty message");
 
     const userMessage = await appendMessage(this.input.sessionId, "user", content);
+    this.persistedMessageIds.add(userMessage.id);
     this.state = {
       ...this.state,
       messages: [...this.state.messages, userMessage],
       streamingAssistantText: "",
       isStreaming: true,
     };
+    this.streamingAssistantText = "";
+    this.currentTurnUserText = content;
     this.notify();
 
-    this.currentTurnUserMessage = userMessage;
-    this.currentTurnAssistantText = "";
-    this.currentTurnTotalTokens = 0;
+    const piUserMessage: UserMessage = {
+      role: "user",
+      content,
+      timestamp: Date.now(),
+    };
+    this.agent.state.messages = [...this.agent.state.messages, piUserMessage];
 
     try {
-      await this.agent.prompt(content);
-    } catch (error) {
-      this.state = { ...this.state, isStreaming: false };
-      this.notify();
-      throw error;
-    }
-
-    const assistantText = this.currentTurnAssistantText.trim();
-    if (assistantText.length === 0) {
+      await this.agent.continue();
+    } finally {
       this.state = { ...this.state, isStreaming: false, streamingAssistantText: "" };
+      this.streamingAssistantText = "";
       this.notify();
-      throw new Error("Assistant returned empty response");
     }
-
-    const assistantMessage = await appendMessage(this.input.sessionId, "assistant", assistantText);
-    this.state = {
-      ...this.state,
-      messages: [...this.state.messages, assistantMessage],
-      streamingAssistantText: "",
-      isStreaming: false,
-    };
-    this.notify();
 
     await this.maybeRunSummarization();
-
-    return { assistant: assistantMessage };
   }
 
   replaceSummaries(summaries: Summary[]) {
@@ -192,6 +196,47 @@ export class SessionRuntime {
     }
   }
 
+  private onAgentEvent(event: { type: string } & Record<string, unknown>) {
+    if (event.type !== "message_end") return;
+    const message = event.message as PiMessage | undefined;
+    if (!message) return;
+    if (message.role === "user") return;
+    void this.persistAgentMessage(message);
+  }
+
+  private async persistAgentMessage(message: PiMessage) {
+    try {
+      if (message.role === "assistant") {
+        const text = extractAssistantText(message);
+        const toolCalls = extractAssistantToolCalls(message);
+        const saved = await appendMessage(this.input.sessionId, "assistant", text, {
+          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+        });
+        this.appendPersistedMessage(saved);
+        return;
+      }
+      if (message.role === "toolResult") {
+        const text = extractToolResultText(message);
+        const saved = await appendMessage(this.input.sessionId, "tool", text, {
+          tool_call_id: message.toolCallId,
+        });
+        this.appendPersistedMessage(saved);
+      }
+    } catch (error) {
+      console.error("[runtime persist]", error);
+    }
+  }
+
+  private appendPersistedMessage(message: Message) {
+    if (this.persistedMessageIds.has(message.id)) return;
+    this.persistedMessageIds.add(message.id);
+    this.state = {
+      ...this.state,
+      messages: [...this.state.messages, message],
+    };
+    this.notify();
+  }
+
   private streamFromBackend(
     model: Model<Api>,
     _context: Context,
@@ -215,58 +260,123 @@ export class SessionRuntime {
     const onParentAbort = () => abortController.abort();
     signal?.addEventListener("abort", onParentAbort, { once: true });
 
+    let textContentIndex: number | null = null;
+    let textContent: TextContent | null = null;
+    this.streamingAssistantText = "";
+
     try {
-      const userText = this.currentTurnUserMessage?.content ?? "";
-      const relevantSummaries = userText.length > 0
-        ? await retrieveRelevantSummaries(userText, { sessionId: this.input.sessionId })
-        : [];
+      const relevantSummaries =
+        this.currentTurnUserText.length > 0
+          ? await retrieveRelevantSummaries(this.currentTurnUserText, {
+              sessionId: this.input.sessionId,
+            })
+          : [];
 
       const liveMessages = getLiveMessages(this.state.messages, this.state.summaries);
+      const transcriptForLlm = transcriptToChatMessages(liveMessages);
       const promptMessages: ChatMessage[] = buildPrompt({
         agent: this.input.agent,
         profile: this.input.profile,
         project: this.input.project,
         relevantSummaries,
-        liveMessages,
-        toolsManifest: describeToolsForPrompt(this.tools),
-      });
+        liveMessages: [],
+        toolsManifest: null,
+      }).concat(transcriptForLlm);
 
-      stream.push({ type: "text_start", contentIndex: 0, partial });
-      const textContent = ensureTextContent(partial);
+      const toolDefinitions = toolsToOpenAIDefinitions(this.tools);
 
+      const toolCallContentIndices = new Map<number, number>();
       const result = await streamChatCompletion(
-        { model: this.model, messages: promptMessages },
+        {
+          model: this.model,
+          messages: promptMessages,
+          tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
+        },
         {
           onDelta: (delta) => {
+            if (textContent === null) {
+              textContentIndex = partial.content.length;
+              textContent = { type: "text", text: "" };
+              partial.content.push(textContent);
+              stream.push({ type: "text_start", contentIndex: textContentIndex, partial });
+            }
             textContent.text += delta;
-            this.currentTurnAssistantText += delta;
-            this.state = {
-              ...this.state,
-              streamingAssistantText: this.currentTurnAssistantText,
-            };
+            this.streamingAssistantText += delta;
+            this.state = { ...this.state, streamingAssistantText: this.streamingAssistantText };
             this.notify();
-            stream.push({ type: "text_delta", contentIndex: 0, delta, partial });
+            stream.push({
+              type: "text_delta",
+              contentIndex: textContentIndex!,
+              delta,
+              partial,
+            });
           },
-          onUsage: ({ total_tokens }) => {
-            this.currentTurnTotalTokens = total_tokens;
+          onToolCallStart: (index, id, name) => {
+            const contentIndex = partial.content.length;
+            toolCallContentIndices.set(index, contentIndex);
+            const placeholder: PiToolCall = {
+              type: "toolCall",
+              id,
+              name,
+              arguments: {},
+            };
+            partial.content.push(placeholder);
+            stream.push({ type: "toolcall_start", contentIndex, partial });
+          },
+          onToolCallDelta: (index, argumentsDelta) => {
+            const contentIndex = toolCallContentIndices.get(index);
+            if (contentIndex === undefined) return;
+            stream.push({
+              type: "toolcall_delta",
+              contentIndex,
+              delta: argumentsDelta,
+              partial,
+            });
           },
         },
         { signal: abortController.signal },
       );
 
-      if (this.currentTurnAssistantText.length === 0 && result.content.length > 0) {
-        this.currentTurnAssistantText = result.content;
-        textContent.text = result.content;
+      const finalText = textContent as TextContent | null;
+      if (finalText !== null && textContentIndex !== null) {
+        stream.push({
+          type: "text_end",
+          contentIndex: textContentIndex,
+          content: finalText.text,
+          partial,
+        });
       }
 
-      stream.push({
-        type: "text_end",
-        contentIndex: 0,
-        content: textContent.text,
-        partial,
-      });
-      partial.stopReason = "stop";
-      stream.push({ type: "done", reason: "stop", message: { ...partial } });
+      if (result.tool_calls.length > 0) {
+        for (const toolCall of result.tool_calls) {
+          const index = result.tool_calls.indexOf(toolCall);
+          const contentIndex = toolCallContentIndices.get(index);
+          if (contentIndex === undefined) continue;
+          const parsedArgs = parseToolArguments(toolCall.function.arguments);
+          const finalized: PiToolCall = {
+            type: "toolCall",
+            id: toolCall.id,
+            name: toolCall.function.name,
+            arguments: parsedArgs,
+          };
+          partial.content[contentIndex] = finalized;
+          stream.push({
+            type: "toolcall_end",
+            contentIndex,
+            toolCall: finalized,
+            partial,
+          });
+        }
+      }
+
+      const stopReason: Extract<StopReason, "stop" | "length" | "toolUse"> =
+        result.tool_calls.length > 0
+          ? "toolUse"
+          : result.finish_reason === "length"
+            ? "length"
+            : "stop";
+      partial.stopReason = stopReason;
+      stream.push({ type: "done", reason: stopReason, message: { ...partial } });
       stream.end();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -326,10 +436,131 @@ function buildErrorAssistantMessage(
   };
 }
 
-function ensureTextContent(message: AssistantMessage): TextContent {
-  const existing = message.content[0];
-  if (existing?.type === "text") return existing;
-  const next: TextContent = { type: "text", text: "" };
-  message.content[0] = next;
-  return next;
+function hydrateAgentMessages(messages: Message[]): PiMessage[] {
+  const result: PiMessage[] = [];
+  for (const message of messages) {
+    const timestamp = Date.parse(message.created_at) || Date.now();
+    if (message.role === "user") {
+      result.push({ role: "user", content: message.content, timestamp });
+      continue;
+    }
+    if (message.role === "assistant") {
+      const content: AssistantMessage["content"] = [];
+      if (message.content.length > 0) {
+        content.push({ type: "text", text: message.content });
+      }
+      if (message.tool_calls) {
+        for (const toolCall of message.tool_calls) {
+          content.push({
+            type: "toolCall",
+            id: toolCall.id,
+            name: toolCall.function.name,
+            arguments: parseToolArguments(toolCall.function.arguments),
+          });
+        }
+      }
+      result.push({
+        role: "assistant",
+        content,
+        api: BACKEND_MODEL.api,
+        provider: BACKEND_MODEL.provider,
+        model: BACKEND_MODEL.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp,
+      });
+      continue;
+    }
+    if (message.role === "tool") {
+      result.push({
+        role: "toolResult",
+        toolCallId: message.tool_call_id ?? "",
+        toolName: "",
+        content: [{ type: "text", text: message.content }],
+        isError: false,
+        timestamp,
+      });
+    }
+  }
+  return result;
+}
+
+function transcriptToChatMessages(messages: Message[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "user") {
+      result.push({ role: "user", content: message.content });
+      continue;
+    }
+    if (message.role === "assistant") {
+      result.push({
+        role: "assistant",
+        content: message.content.length > 0 ? message.content : null,
+        tool_calls: message.tool_calls ?? undefined,
+      });
+      continue;
+    }
+    if (message.role === "tool") {
+      result.push({
+        role: "tool",
+        content: message.content,
+        tool_call_id: message.tool_call_id ?? "",
+      });
+    }
+  }
+  return result;
+}
+
+function toolsToOpenAIDefinitions(tools: AgentTool[]): OpenAIToolDefinition[] {
+  return tools.map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters as unknown as Record<string, unknown>,
+    },
+  }));
+}
+
+function extractAssistantText(message: PiMessage): string {
+  if (message.role !== "assistant") return "";
+  return message.content
+    .filter((block): block is TextContent => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+}
+
+function extractAssistantToolCalls(message: PiMessage): OpenAIToolCallRecord[] {
+  if (message.role !== "assistant") return [];
+  return message.content
+    .filter((block): block is PiToolCall => block.type === "toolCall")
+    .map((block) => ({
+      id: block.id,
+      type: "function" as const,
+      function: { name: block.name, arguments: JSON.stringify(block.arguments ?? {}) },
+    }));
+}
+
+function extractToolResultText(message: PiMessage): string {
+  if (message.role !== "toolResult") return "";
+  return message.content
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("");
+}
+
+function parseToolArguments(text: string): Record<string, unknown> {
+  if (!text) return {};
+  try {
+    const value = JSON.parse(text);
+    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

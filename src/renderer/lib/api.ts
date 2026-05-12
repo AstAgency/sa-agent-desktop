@@ -12,13 +12,16 @@ import type {
   CreateSummaryInput,
   EmbeddingModelInfo,
   Message,
+  MessageRole,
   MessagesPage,
+  OpenAIToolCallRecord,
   Profile,
   Project,
   SearchSummariesRequest,
   SearchSummaryResult,
   Session,
   Summary,
+  ToolCallDelta,
   UpdateBillingLimitsInput,
   UpdateSummaryInput,
 } from "./types";
@@ -195,13 +198,21 @@ export async function getAllSessionMessages(
   return all;
 }
 
+export type AppendMessageOptions = RequestOptions & {
+  tool_calls?: OpenAIToolCallRecord[] | null;
+  tool_call_id?: string | null;
+};
+
 export function appendMessage(
   sessionId: string,
-  role: "user" | "assistant",
+  role: MessageRole,
   content: string,
-  options?: RequestOptions,
+  options?: AppendMessageOptions,
 ): Promise<Message> {
-  return request("POST", `/v1/sessions/${sessionId}/messages`, { role, content }, options);
+  const body: Record<string, unknown> = { role, content };
+  if (options?.tool_calls && options.tool_calls.length > 0) body.tool_calls = options.tool_calls;
+  if (options?.tool_call_id) body.tool_call_id = options.tool_call_id;
+  return request("POST", `/v1/sessions/${sessionId}/messages`, body, { signal: options?.signal });
 }
 
 // ============================================================================
@@ -341,17 +352,33 @@ export async function chatCompletion(
   return request("POST", "/v1/chat/completions", { ...payload, stream: false }, options);
 }
 
+export type ToolCallAccumulator = {
+  id: string;
+  name: string;
+  argumentsText: string;
+};
+
 export type StreamChatHandlers = {
   onDelta?: (delta: string) => void;
   onChunk?: (chunk: ChatCompletionChunk) => void;
   onUsage?: (usage: { total_tokens: number }) => void;
+  onToolCallStart?: (index: number, id: string, name: string) => void;
+  onToolCallDelta?: (index: number, argumentsDelta: string) => void;
+  onFinishReason?: (reason: string) => void;
+};
+
+export type StreamChatResult = {
+  content: string;
+  total_tokens: number;
+  tool_calls: OpenAIToolCallRecord[];
+  finish_reason: string | null;
 };
 
 export async function streamChatCompletion(
   payload: ChatCompletionRequest,
   handlers: StreamChatHandlers,
   options?: RequestOptions,
-): Promise<{ content: string; total_tokens: number }> {
+): Promise<StreamChatResult> {
   const url = `${getBackendUrl()}/v1/chat/completions`;
   const response = await fetch(url, {
     method: "POST",
@@ -373,6 +400,9 @@ export async function streamChatCompletion(
   let buffer = "";
   let assembledContent = "";
   let totalTokens = 0;
+  let finishReason: string | null = null;
+  const toolCalls = new Map<number, ToolCallAccumulator>();
+  const announcedIndices = new Set<number>();
   let done = false;
 
   while (!done) {
@@ -390,23 +420,80 @@ export async function streamChatCompletion(
         done = true;
         break;
       }
+      let chunk: ChatCompletionChunk;
       try {
-        const chunk = JSON.parse(data) as ChatCompletionChunk;
-        handlers.onChunk?.(chunk);
-        const delta = chunk.choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta.length > 0) {
-          assembledContent += delta;
-          handlers.onDelta?.(delta);
-        }
-        if (chunk.usage?.total_tokens) {
-          totalTokens = chunk.usage.total_tokens;
-          handlers.onUsage?.({ total_tokens: totalTokens });
-        }
+        chunk = JSON.parse(data) as ChatCompletionChunk;
       } catch {
-        // ignore malformed chunk
+        continue;
+      }
+      handlers.onChunk?.(chunk);
+
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (typeof delta === "string" && delta.length > 0) {
+        assembledContent += delta;
+        handlers.onDelta?.(delta);
+      }
+
+      const toolDeltas = choice?.delta?.tool_calls;
+      if (toolDeltas) {
+        for (const toolDelta of toolDeltas) {
+          mergeToolCallDelta(toolCalls, toolDelta, handlers, announcedIndices);
+        }
+      }
+
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+        handlers.onFinishReason?.(choice.finish_reason);
+      }
+
+      if (chunk.usage?.total_tokens) {
+        totalTokens = chunk.usage.total_tokens;
+        handlers.onUsage?.({ total_tokens: totalTokens });
       }
     }
   }
 
-  return { content: assembledContent, total_tokens: totalTokens };
+  const collectedToolCalls: OpenAIToolCallRecord[] = [];
+  const sortedIndices = Array.from(toolCalls.keys()).sort((a, b) => a - b);
+  for (const index of sortedIndices) {
+    const acc = toolCalls.get(index)!;
+    collectedToolCalls.push({
+      id: acc.id,
+      type: "function",
+      function: { name: acc.name, arguments: acc.argumentsText },
+    });
+  }
+
+  return {
+    content: assembledContent,
+    total_tokens: totalTokens,
+    tool_calls: collectedToolCalls,
+    finish_reason: finishReason,
+  };
+}
+
+function mergeToolCallDelta(
+  accumulator: Map<number, ToolCallAccumulator>,
+  delta: ToolCallDelta,
+  handlers: StreamChatHandlers,
+  announced: Set<number>,
+) {
+  const index = delta.index;
+  let entry = accumulator.get(index);
+  if (!entry) {
+    entry = { id: "", name: "", argumentsText: "" };
+    accumulator.set(index, entry);
+  }
+  if (delta.id) entry.id = delta.id;
+  if (delta.function?.name) entry.name += delta.function.name;
+  if (delta.function?.arguments) entry.argumentsText += delta.function.arguments;
+
+  if (!announced.has(index) && entry.id.length > 0 && entry.name.length > 0) {
+    announced.add(index);
+    handlers.onToolCallStart?.(index, entry.id, entry.name);
+  }
+  if (delta.function?.arguments && announced.has(index)) {
+    handlers.onToolCallDelta?.(index, delta.function.arguments);
+  }
 }

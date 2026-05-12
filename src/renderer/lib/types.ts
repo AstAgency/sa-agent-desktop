@@ -25,13 +25,21 @@ export type Session = {
   updated_at: string;
 };
 
-export type MessageRole = "user" | "assistant" | "system";
+export type MessageRole = "user" | "assistant" | "system" | "tool";
+
+export type OpenAIToolCallRecord = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
 
 export type Message = {
   id: string;
   session_id: string;
   role: MessageRole;
   content: string;
+  tool_calls?: OpenAIToolCallRecord[] | null;
+  tool_call_id?: string | null;
   created_at: string;
 };
 
@@ -114,10 +122,19 @@ export type Billing = {
   updated_at: string;
 };
 
-export type ChatMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
+export type OpenAIToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters: Record<string, unknown>;
+  };
 };
+
+export type ChatMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: OpenAIToolCallRecord[] }
+  | { role: "tool"; content: string; tool_call_id: string };
 
 export type ChatCompletionRequest = {
   model: string;
@@ -125,6 +142,8 @@ export type ChatCompletionRequest = {
   stream?: boolean;
   temperature?: number;
   max_tokens?: number;
+  tools?: OpenAIToolDefinition[];
+  tool_choice?: "auto" | "none" | "required";
 };
 
 export type ChatCompletionUsage = {
@@ -138,10 +157,21 @@ export type ChatCompletionResponse = {
   object: "chat.completion";
   choices: Array<{
     index: number;
-    message: { role: "assistant"; content: string };
+    message: {
+      role: "assistant";
+      content: string | null;
+      tool_calls?: OpenAIToolCallRecord[];
+    };
     finish_reason: string;
   }>;
   usage: ChatCompletionUsage;
+};
+
+export type ToolCallDelta = {
+  index: number;
+  id?: string;
+  type?: "function";
+  function?: { name?: string; arguments?: string };
 };
 
 export type ChatCompletionChunk = {
@@ -149,7 +179,11 @@ export type ChatCompletionChunk = {
   object: "chat.completion.chunk";
   choices: Array<{
     index: number;
-    delta: { role?: "assistant"; content?: string };
+    delta: {
+      role?: "assistant";
+      content?: string;
+      tool_calls?: ToolCallDelta[];
+    };
     finish_reason?: string | null;
   }>;
   usage?: ChatCompletionUsage;
