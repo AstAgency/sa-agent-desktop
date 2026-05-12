@@ -1,739 +1,225 @@
-export type AppLanguage = "ru" | "en";
-export type ThemeMode = "dark" | "light";
-export type ConversationScope = "global" | "project";
-export type WorkspaceMode = "home" | "activity" | "thread" | "tasks" | "agents" | "files" | "executions";
-
-export type AppScreen =
-  | "language-setup"
-  | "auth"
-  | "bootstrapping"
-  | "bootstrap-error"
-  | "empty-projects"
-  | "workspace-shell";
-
-export type PersistedAppState = {
-  language: AppLanguage | null;
-  isAuthenticated: boolean;
-  themeMode?: ThemeMode | null;
-  workspaceMode?: WorkspaceMode | null;
-  selectedAgentKey?: string | null;
-  activeWorkspaceId?: string | null;
-  activeProjectId?: string | null;
-  activeProjectAgentId?: string | null;
-  activeSessionId?: string | null;
-  activeThreadId?: string | null;
-  activeSessionByProjectId?: Record<string, string | null>;
-  apiBaseUrl?: string | null;
-  devModeEnabled?: boolean;
-};
-
-export type PersistedAppStatePatch = Partial<PersistedAppState>;
-
-export type ViewerProfile = {
-  user_id: string;
-  email: string | null;
-  display_name: string | null;
-  onboarding_skill_id?: string | null;
-  onboarding_payload?: Record<string, unknown> | null;
-  preferred_user_name: string | null;
-  preferred_agent_name: string | null;
-  activity_domain: string | null;
-  onboarding_completed: boolean;
-  onboarding_completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type WorkspaceSummary = {
+export type Profile = {
   id: string;
   name: string;
-  slug: string;
-  created_by_user_id: string;
+  global_memory: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type WorkspaceRecord = WorkspaceSummary & {
-  description?: string | null;
-  visibility?: string | null;
-  lifecycle_state?: string | null;
-  [key: string]: unknown;
-};
-
-export type ProjectSummary = {
+export type Project = {
   id: string;
-  workspace_id: string;
-  agent_key?: string | null;
-  key: string;
+  profile_id: string;
   name: string;
   description: string | null;
-  onboarding_skill_id?: string | null;
-  onboarding_payload?: Record<string, unknown> | null;
-  preferred_user_name: string | null;
-  preferred_agent_name: string | null;
-  activity_domain: string | null;
-  onboarding_completed: boolean;
-  onboarding_completed_at: string | null;
-  lifecycle_state: string;
-  created_by_user_id: string;
+  project_memory: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type ProjectRecord = ProjectSummary & {
-  visibility?: string | null;
-  safe_metadata?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-export type BootstrapStage =
-  | "profile"
-  | "workspaces"
-  | "projects"
-  | "sessions"
-  | "assistant"
-  | "complete";
-
-export type BootstrapErrorKind = "request-failed" | "no-workspaces";
-
-export type SessionSummary = {
+export type Session = {
   id: string;
-  workspace_id: string;
+  profile_id: string;
   project_id: string | null;
-  active_capability_key?: string | null;
-  active_skill_id?: string | null;
-  execution_id?: string | null;
-  execution_status?: ExecutionStatus | null;
-  skill_state?: SessionSkillState | null;
-  channel_kind?: string | null;
-  started_by?: string | null;
-  session_state?: string | null;
-  message_count?: number;
-  compaction_count?: number;
-  context_token_estimate?: number;
-  last_user_message_at?: string | null;
-  title?: string | null;
-  summary?: string | null;
-  status?: string | null;
-  lifecycle_state?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  display_name: string;
+  created_at: string;
+  updated_at: string;
 };
 
-export type SessionSkillState = {
-  status?: "active" | "completed" | (string & {});
-  completion_payload?: Record<string, unknown> | null;
-  completed_at?: string | null;
-  skill_input?: Record<string, unknown> | null;
-};
+export type MessageRole = "user" | "assistant" | "system";
 
-export type SessionMessageAttachment = {
-  id: string;
-  file_name?: string | null;
-  mime_type?: string | null;
-  media_kind?: string | null;
-  purpose?: string | null;
-  size_bytes?: number | null;
-  metadata_json?: Record<string, unknown> | null;
-};
-
-export type SessionMessage = {
+export type Message = {
   id: string;
   session_id: string;
-  parent_message_id: string | null;
-  role: "user" | "assistant" | "system" | (string & {});
-  message_kind: string;
-  content_markdown: string;
-  token_estimate: number;
-  is_hidden: boolean;
-  attachments: SessionMessageAttachment[];
+  role: MessageRole;
+  content: string;
   created_at: string;
 };
 
-export type ThreadRecord = {
+export type MessagesPage = {
+  messages: Message[];
+  total: number;
+  page: number;
+  has_more: boolean;
+};
+
+export type Summary = {
   id: string;
-  project_id?: string | null;
-  project_agent_id?: string | null;
-  agent_key?: string | null;
-  title?: string | null;
-  summary?: string | null;
-  status?: string | null;
-  lifecycle_state?: string | null;
-  active_execution_id?: string | null;
-  execution_status?: ExecutionStatus | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+  session_id: string;
+  profile_id: string;
+  content: string;
+  from_message_id: string | null;
+  to_message_id: string | null;
+  embedding: number[] | null;
+  created_at: string;
+  updated_at: string;
 };
 
-export type ProjectAgentRecord = {
+export type EmbeddingModelInfo = {
+  model_id: string;
+  dimensions: number;
+  distance_metric: "cosine";
+  max_input_tokens: number;
+  normalization: boolean;
+};
+
+export type Agent = {
   id: string;
-  project_id?: string | null;
-  agent_key?: string | null;
-  display_name?: string | null;
-  role?: string | null;
-  status?: string | null;
-  lifecycle_state?: string | null;
-  active_thread_id?: string | null;
-  active_execution_id?: string | null;
-  capabilities?: string[] | null;
-  safe_metadata?: Record<string, unknown> | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+  agent_key: string;
+  display_name: string;
+  description: string | null;
+  system_prompt: string;
+  orchestration_protocol: string | null;
+  version: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
-export type CommitmentRecord = {
+export type AgentRole = {
   id: string;
-  project_id?: string | null;
-  thread_id?: string | null;
-  title?: string | null;
-  description?: string | null;
-  status?: string | null;
-  severity?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+  agent_id: string;
+  role_name: string;
+  description: string | null;
+  prompt_content: string;
+  created_at: string;
 };
 
-export type ContextItemRecord = {
+export type AgentSkill = {
   id: string;
-  title?: string | null;
-  kind?: string | null;
-  description?: string | null;
-  status?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+  agent_id: string;
+  skill_name: string;
+  description: string | null;
+  files: Record<string, string>;
+  created_at: string;
 };
 
-export type WikiPageRecord = {
+export type AgentSyncResult = {
+  synced: number;
+  deleted: number;
+  errors: string[];
+};
+
+export type Billing = {
   id: string;
-  title?: string | null;
-  slug?: string | null;
-  summary?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+  profile_id: string;
+  hourly_usage: number;
+  daily_usage: number;
+  weekly_usage: number;
+  max_hourly: number;
+  max_daily: number;
+  max_weekly: number;
+  hourly_reset_at: string;
+  daily_reset_at: string;
+  weekly_reset_at: string;
+  updated_at: string;
 };
 
-export type DocumentRevisionRecord = {
-  id: string;
-  document_id?: string | null;
-  revision_number?: number | null;
-  created_at?: string | null;
-  author_display_name?: string | null;
-  summary?: string | null;
-  [key: string]: unknown;
-};
-
-export type AssistantStateRecord = {
-  thread_id?: string | null;
-  execution_id?: string | null;
-  execution_status?: ExecutionStatus | null;
-  unread_count?: number | null;
-  status?: string | null;
-  [key: string]: unknown;
-};
-
-export type LlmRequestMessage = {
-  role: string;
+export type ChatMessage = {
+  role: "system" | "user" | "assistant";
   content: string;
 };
 
-export type LlmToolDefinition = {
-  type: "function";
-  function: {
-    name: string;
-    description?: string | null;
-    parameters?: Record<string, unknown> | null;
-  };
+export type ChatCompletionRequest = {
+  model: string;
+  messages: ChatMessage[];
+  stream?: boolean;
+  temperature?: number;
+  max_tokens?: number;
 };
 
-export type LlmToolChoice =
-  | "none"
-  | "auto"
-  | {
-      type: "function";
-      function: {
-        name: string;
-      };
-    };
+export type ChatCompletionUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
 
-export type LlmResponseToolCall = {
+export type ChatCompletionResponse = {
   id: string;
-  type: "function";
-  name: string;
-  arguments: Record<string, unknown>;
+  object: "chat.completion";
+  choices: Array<{
+    index: number;
+    message: { role: "assistant"; content: string };
+    finish_reason: string;
+  }>;
+  usage: ChatCompletionUsage;
 };
 
-export type LlmResponseInput = {
-  workspace_id: string;
-  project_id?: string | null;
-  thread_id?: string | null;
-  session_id?: string | null;
-  project_agent_id?: string | null;
-  model?: string | null;
-  operation_kind?: "generate_text" | "generate_json";
-  messages: LlmRequestMessage[];
-  tools?: LlmToolDefinition[] | null;
-  tool_choice?: LlmToolChoice | null;
-};
-
-export type LlmResponseRecord = {
-  request_id?: string | null;
-  provider?: string | null;
-  model?: string | null;
-  output_text?: string | null;
-  finish_reason?: string | null;
-  tool_calls?: LlmResponseToolCall[] | null;
-  usage?: Record<string, unknown> | null;
-  audit?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-export type AssistantThreadRecord = ThreadRecord & {
-  kind?: string | null;
-};
-
-export type AssistantThreadEnvelope = {
-  thread: AssistantThreadRecord;
-  messages: SessionMessage[];
-  [key: string]: unknown;
-};
-
-export type ThreadRuntimeSnapshot = {
-  thread_id?: string | null;
-  execution_id?: string | null;
-  execution_status?: ExecutionStatus | null;
-  runtime_state?: string | null;
-  last_heartbeat_at?: string | null;
-  [key: string]: unknown;
-};
-
-export type ThreadSupervisorSnapshot = {
-  thread_id?: string | null;
-  status?: string | null;
-  approvals_required?: number | null;
-  blocked_reason?: string | null;
-  [key: string]: unknown;
-};
-
-export type AgentCatalogItem = {
-  agent_key: string;
-  display_name?: string | null;
-  description?: string | null;
-  domain?: string | null;
-  memory_policy?: Record<string, unknown> | null;
-  visibility?: string | null;
-  is_active?: boolean | null;
-  safe_metadata?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-export type AgentSafeProfile = {
-  agent_key: string;
-  display_name?: string | null;
-  domain?: string | null;
-  memory_policy?: Record<string, unknown> | null;
-  visibility?: string | null;
-  is_active?: boolean | null;
-  safe_metadata?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-export type AgentProfileRecord = AgentSafeProfile & {
-  profile_type?: string | null;
-  prompts_version?: string | null;
-};
-
-export type CapabilityMode = "interactive" | "one_shot" | "both" | (string & {});
-
-export type CapabilityCatalogItem = {
-  capability_key: string;
-  display_name?: string | null;
-  description?: string | null;
-  mode: CapabilityMode;
-  input_schema?: Record<string, unknown> | null;
-  output_schema?: Record<string, unknown> | null;
-  safe_metadata?: Record<string, unknown> | null;
-  agent_key?: string | null;
-  [key: string]: unknown;
-};
-
-export type AgentMcpServerConfig = {
-  description?: string | null;
-  transport?: string | null;
-  url?: string | null;
-  command?: string | null;
-  args?: string[] | null;
-  env?: Record<string, string> | null;
-  [key: string]: unknown;
-};
-
-export type AgentMcpLandscape = {
-  mcpServers: Record<string, AgentMcpServerConfig>;
-  [key: string]: unknown;
-};
-
-export type WorkspaceMemberRecord = {
-  user_id?: string | null;
-  email?: string | null;
-  display_name?: string | null;
-  role?: string | null;
-  status?: string | null;
-  [key: string]: unknown;
-};
-
-export type AttachmentRecord = {
+export type ChatCompletionChunk = {
   id: string;
-  file_name?: string | null;
-  media_kind?: string | null;
-  mime_type?: string | null;
-  size_bytes?: number | null;
-  url?: string | null;
-  [key: string]: unknown;
+  object: "chat.completion.chunk";
+  choices: Array<{
+    index: number;
+    delta: { role?: "assistant"; content?: string };
+    finish_reason?: string | null;
+  }>;
+  usage?: ChatCompletionUsage;
 };
 
-export type UploadAccepted = {
-  upload_id: string;
-  status?: string | null;
-  file_name?: string | null;
-  [key: string]: unknown;
+export type SearchSummaryResult = Summary & {
+  distance?: number;
 };
 
-export type MemoryNoteRecord = {
-  id: string;
-  project_id?: string | null;
-  title?: string | null;
-  content_markdown?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
+export type SearchSummariesRequest = {
+  embedding: number[];
+  limit?: number;
+  session_id?: string;
 };
 
-export type MemoryChunkAccepted = {
-  chunk_id?: string | null;
-  status?: string | null;
-  [key: string]: unknown;
-};
-
-export type ExecutionLeaseRecord = {
-  execution_id?: string | null;
-  lease_id?: string | null;
-  status?: string | null;
-  heartbeat_at?: string | null;
-  expires_at?: string | null;
-  [key: string]: unknown;
-};
-
-export type McpToolDescriptor = {
-  serverName: string;
-  name: string;
-  title?: string | null;
-  description?: string | null;
-  inputSchema?: Record<string, unknown> | null;
-};
-
-export type RuntimeToolDescriptor = {
-  name: string;
-  description?: string | null;
-  inputSchema?: Record<string, unknown> | null;
-  plane: "backend" | "local";
-  backendName?: string | null;
-  localName?: string | null;
-};
-
-export type McpToolCallContentItem =
-  | {
-      type: "text";
-      text: string;
-    }
-  | {
-      type: string;
-      [key: string]: unknown;
-    };
-
-export type McpToolCallResult = {
-  serverName: string;
-  toolName: string;
-  content?: McpToolCallContentItem[] | null;
-  structuredContent?: unknown;
-  isError: boolean;
-};
-
-export type EmbeddingPolicy = {
-  model_id: string;
-  dimensions: number;
-  embedding_version: string;
-  chunking_version: string;
-  normalization: boolean;
-  prefix_policy?: string | null;
-};
-
-export type GeneratedDocument = {
-  id: string;
-  project_id: string;
-  title?: string | null;
-  document_type?: string | null;
-  current_content_markdown?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  [key: string]: unknown;
-};
-
-export type SessionCreateInput = {
-  workspace_id: string;
-  project_id?: string;
-  agent_key?: string;
-  capability_key?: string;
-  input?: Record<string, unknown>;
-  channel_kind?: string;
-  resume_strategy?: "new" | "resume_latest";
-};
-
-export type SessionMessageInput = {
-  content_markdown: string;
-  role?: "user" | "assistant";
-  actor_id?: string | null;
-  parent_message_id?: string | null;
-  attachment_ids?: string[];
-};
-
-export type AssistantThreadPersistedMessageResponse = {
-  thread?: AssistantThreadRecord | null;
-  messages?: SessionMessage[] | null;
-  [key: string]: unknown;
-};
-
-export type SessionMessageAccepted = {
-  job_id?: string | null;
-  job_kind?: string | null;
-  status: string;
-  poll_url?: string | null;
-  session_id?: string | null;
-  assistant_message_id?: string | null;
-  assistant_content_markdown?: string | null;
-  capability_key?: string | null;
-  execution_id?: string | null;
-  execution_status?: ExecutionStatus | null;
-  completion_payload?: Record<string, unknown> | null;
-  execution_applied_effects?: Record<string, unknown> | null;
-  skill_id?: string | null;
-  skill_status?: string | null;
-  skill_completion_payload?: Record<string, unknown> | null;
-};
-
-export type StreamSessionMessageResult =
-  | {
-      mode: "sse";
-      completionPayload: Record<string, unknown> | null;
-      executionCompleted: boolean;
-    }
-  | {
-      mode: "json";
-      accepted: SessionMessageAccepted;
-      completionPayload: Record<string, unknown> | null;
-      executionCompleted: boolean;
-    };
-
-export type SessionMessageStreamEvent =
-  | {
-      event: "message.accepted";
-      data: {
-        job_id: string;
-        session_id: string;
-        user_message_id: string | null;
-        assistant_message_id: string | null;
-      };
-    }
-  | {
-      event: "message.delta";
-      data: {
-        job_id: string;
-        session_id: string;
-        assistant_message_id: string | null;
-        delta: string;
-      };
-    }
-  | {
-      event: "message.completed";
-      data: {
-        job_id: string;
-        session_id: string;
-        assistant_message_id: string | null;
-        content_markdown: string;
-      };
-    }
-  | {
-      event: "skill.completed";
-      data: {
-        session_id: string;
-        skill_id: string;
-        completion_payload: Record<string, unknown>;
-      };
-    }
-  | {
-      event: "execution.completed";
-      data: {
-        session_id: string;
-        execution_id: string;
-        capability_key: string;
-        completion_payload?: Record<string, unknown> | null;
-        execution_applied_effects?: Record<string, unknown> | null;
-      };
-    };
-
-export type BootstrapSnapshot = {
-  profile: ViewerProfile;
-  workspaces: WorkspaceSummary[];
-  selectedWorkspace: WorkspaceSummary;
-  agents: AgentCatalogItem[];
-  selectedAgentKey: string | null;
-  projects: ProjectSummary[];
-  selectedProject: ProjectSummary | null;
-  globalSessions: SessionSummary[];
-  globalAssistantMessages: SessionMessage[];
-  projectSessions: SessionSummary[];
-};
-
-export type MeBootstrapRecord = {
-  profile?: ViewerProfile | null;
-  viewer_profile?: ViewerProfile | null;
-  selected_workspace_id?: string | null;
-  selected_project_id?: string | null;
-  assistant_thread?: AssistantThreadRecord | null;
-  assistant_messages?: SessionMessage[] | null;
-  user_global_session?: SessionSummary | null;
-  user_global_messages?: SessionMessage[] | null;
-  workspaces?: WorkspaceSummary[] | null;
-  selected_workspace?: WorkspaceSummary | null;
-  selected_project?: ProjectSummary | null;
-  [key: string]: unknown;
-};
-
-export type ExecutionStatus =
-  | "pending"
-  | "accepted"
-  | "running"
-  | "waiting_user"
-  | "waiting_approval"
-  | "completed"
-  | "applied"
-  | "failed"
-  | "cancelled"
-  | "orphaned"
-  | (string & {});
-
-export type ExecutionCreateInput = {
-  workspace_id: string;
-  project_id?: string;
-  agent_key?: string;
-  capability_key: string;
-  input: Record<string, unknown>;
-  session_id?: string | null;
-};
-
-export type ExecutionAccepted = {
-  execution_id: string;
-  capability_key: string;
-  status: "accepted" | ExecutionStatus;
-  job_id?: string | null;
-  poll_url?: string | null;
-  completion_payload?: Record<string, unknown> | null;
-  execution_applied_effects?: Record<string, unknown> | null;
-};
-
-export type ExecutionRecord = {
-  execution_id: string;
-  capability_key?: string | null;
-  status: ExecutionStatus;
-  job_id?: string | null;
-  session_id?: string | null;
-  project_id?: string | null;
-  workspace_id?: string | null;
-  completion_payload?: Record<string, unknown> | null;
-  output_payload?: unknown;
-  execution_applied_effects?: Record<string, unknown> | null;
-  error?: unknown;
-  created_at?: string | null;
-  updated_at?: string | null;
+export type CreateSessionInput = {
+  display_name: string;
+  project_id: string | null;
 };
 
 export type CreateProjectInput = {
-  key: string;
   name: string;
   description?: string | null;
+  project_key?: string;
 };
 
-export type StorageBridge = {
-  getAppState: () => Promise<PersistedAppState | null>;
-  setAppState: (patch: PersistedAppStatePatch) => Promise<PersistedAppState>;
-  clearAppState: () => Promise<void>;
+export type CreateSummaryInput = {
+  content: string;
+  embedding: number[];
+  from_message_id: string | null;
+  to_message_id: string | null;
 };
 
-export type DevtoolsBridge = {
-  open: () => Promise<{
-    ok: boolean;
-    error?: string | null;
-  }>;
+export type UpdateSummaryInput = {
+  content?: string;
+  embedding?: number[];
+  from_message_id?: string | null;
+  to_message_id?: string | null;
 };
 
-export type AgentFilesBridge = {
-  writeFiles: (
-    files: Array<{
-      relativePath: string;
-      content: string;
-    }>,
-  ) => Promise<{
-    ok: boolean;
-    rootPath?: string | null;
-    error?: string | null;
-  }>;
-  openFolder: () => Promise<{
-    ok: boolean;
-    rootPath?: string | null;
-    error?: string | null;
-  }>;
+export type UpdateBillingLimitsInput = {
+  max_hourly?: number;
+  max_daily?: number;
+  max_weekly?: number;
 };
 
-export type McpBridge = {
-  listTools: (runtimeId: string, servers: Record<string, AgentMcpServerConfig>) => Promise<McpToolDescriptor[]>;
-  callTool: (
-    runtimeId: string,
-    serverName: string,
-    toolName: string,
-    argumentsJson: Record<string, unknown>,
-  ) => Promise<McpToolCallResult>;
-  closeRuntime: (runtimeId: string) => Promise<void>;
+export type WorkspaceScope =
+  | { kind: "project"; projectId: string }
+  | { kind: "global"; sessionId: string };
+
+export type FileEntry = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number | null;
+  modified_at: string;
 };
 
-export type SaAgentBridge = {
-  storage: StorageBridge;
-  devtools?: DevtoolsBridge;
-  files?: AgentFilesBridge;
-  mcp?: McpBridge;
+export type RunPythonResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+  timed_out: boolean;
+  script_path: string;
 };
 
-export type DebugNetworkEntry = {
-  id: string;
-  startedAt: string;
-  durationMs: number;
-  mode: "json" | "sse";
-  method: string;
-  url: string;
-  requestHeaders?: Record<string, string>;
-  requestBody?: unknown;
-  status?: number | null;
-  responseBody?: unknown;
-  responseHeaders?: Record<string, string>;
-  eventNames?: string[];
-  error?: string | null;
+export type PythonRuntimeStatus = {
+  ready: boolean;
+  model_id: string | null;
+  dimensions: number | null;
+  error: string | null;
 };
-
-declare global {
-  interface Window {
-    saAgent?: SaAgentBridge;
-  }
-}
-
-export {};

@@ -10,7 +10,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node", "@playwright/test"]
+    "allowJs": true,
+    "types": ["node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "tests/e2e/smoke.spec.ts"]
+  "include": ["vite.config.ts", "scripts/**/*.mjs"]
 }

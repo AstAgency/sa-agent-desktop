@@ -1,185 +1,105 @@
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
-const storageKey = "sa-agent.app-state";
+type IpcEnvelope<T> = { ok: true; value: T } | { ok: false; error: string };
 
-type PersistedAppState = {
-  language: "ru" | "en" | null;
-  isAuthenticated: boolean;
-  themeMode?: "dark" | "light" | null;
-  selectedAgentKey?: string | null;
-  activeProjectId?: string | null;
-  activeSessionByProjectId?: Record<string, string | null>;
-  apiBaseUrl?: string | null;
-  devModeEnabled?: boolean;
+type WorkspaceScope =
+  | { kind: "project"; projectId: string }
+  | { kind: "global"; sessionId: string };
+
+type FileEntry = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number | null;
+  modified_at: string;
 };
 
-type PersistedAppStatePatch = Partial<PersistedAppState>;
+type RunPythonResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+  timed_out: boolean;
+  script_path: string;
+};
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+type PythonRuntimeStatus = {
+  ready: boolean;
+  modelId: string | null;
+  dimensions: number | null;
+  error: string | null;
+};
 
-function normalizeAppState(value: unknown): PersistedAppState {
-  if (!isRecord(value)) {
-    return {
-      language: null,
-      isAuthenticated: false,
-      themeMode: "dark",
-      selectedAgentKey: null,
-      activeProjectId: null,
-      activeSessionByProjectId: {},
-      apiBaseUrl: null,
-      devModeEnabled: true,
-    };
+async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
+  const result = await invocation;
+  if (!result || typeof result !== "object") {
+    throw new Error("Invalid IPC response");
   }
-
-  return {
-    language: value.language === "ru" || value.language === "en" ? value.language : null,
-    isAuthenticated: typeof value.isAuthenticated === "boolean" ? value.isAuthenticated : false,
-    themeMode: value.themeMode === "dark" || value.themeMode === "light" ? value.themeMode : "dark",
-    selectedAgentKey: typeof value.selectedAgentKey === "string" ? value.selectedAgentKey : null,
-    activeProjectId: typeof value.activeProjectId === "string" ? value.activeProjectId : null,
-    activeSessionByProjectId:
-      isRecord(value.activeSessionByProjectId)
-        ? (Object.fromEntries(
-            Object.entries(value.activeSessionByProjectId).filter(
-              ([key, entryValue]) => key.length > 0 && (typeof entryValue === "string" || entryValue === null),
-            ),
-          ) as Record<string, string | null>)
-        : {},
-    apiBaseUrl: typeof value.apiBaseUrl === "string" && value.apiBaseUrl.trim().length > 0 ? value.apiBaseUrl : null,
-    devModeEnabled: typeof value.devModeEnabled === "boolean" ? value.devModeEnabled : true,
-  };
-}
-
-function mergeAppState(
-  currentState: PersistedAppState,
-  patch: PersistedAppStatePatch,
-): PersistedAppState {
-  return normalizeAppState({ ...currentState, ...patch });
-}
-
-function getStorage() {
-  return (globalThis as {
-    localStorage?: {
-      getItem: (key: string) => string | null;
-      setItem: (key: string, value: string) => void;
-      removeItem: (key: string) => void;
-    };
-  }).localStorage;
-}
-
-function readAppState(): PersistedAppState | null {
-  const storage = getStorage();
-  const rawValue = storage?.getItem(storageKey);
-
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    return normalizeAppState(JSON.parse(rawValue));
-  } catch {
-    return null;
-  }
-}
-
-function writeAppState(state: PersistedAppState) {
-  const storage = getStorage();
-
-  if (!storage) {
-    return;
-  }
-
-  storage.setItem(storageKey, JSON.stringify(state));
+  if (result.ok) return result.value;
+  throw new Error(result.error);
 }
 
 contextBridge.exposeInMainWorld("saAgent", {
-  storage: {
-    async getAppState() {
-      return readAppState();
-    },
-    async setAppState(patch: PersistedAppStatePatch) {
-      const currentState =
-        readAppState() ?? {
-          language: null,
-          isAuthenticated: false,
-          themeMode: "dark",
-          selectedAgentKey: null,
-          activeProjectId: null,
-          activeSessionByProjectId: {},
-          apiBaseUrl: null,
-          devModeEnabled: true,
-        };
-      const nextState = mergeAppState(currentState, patch);
-      writeAppState(nextState);
-      return nextState;
-    },
-    async clearAppState() {
-      getStorage()?.removeItem(storageKey);
-    },
-  },
   devtools: {
-    async open() {
+    open() {
       return ipcRenderer.invoke("sa-agent:open-devtools");
     },
   },
-  files: {
-    async writeFiles(files: Array<{ relativePath: string; content: string }>) {
-      return ipcRenderer.invoke("sa-agent:write-agent-files", files);
+  python: {
+    status(): Promise<PythonRuntimeStatus> {
+      return ipcRenderer.invoke("sa-agent:python-status") as Promise<PythonRuntimeStatus>;
     },
-    async openFolder() {
-      return ipcRenderer.invoke("sa-agent:open-agent-files-folder");
+    start(): Promise<PythonRuntimeStatus> {
+      return unwrap(ipcRenderer.invoke("sa-agent:python-start"));
+    },
+    embedQuery(text: string): Promise<number[]> {
+      return unwrap(ipcRenderer.invoke("sa-agent:python-embed-query", text));
+    },
+    embedPassage(text: string): Promise<number[]> {
+      return unwrap(ipcRenderer.invoke("sa-agent:python-embed-passage", text));
+    },
+    run(
+      scope: WorkspaceScope,
+      code: string,
+      options?: { timeoutMs?: number; stdin?: string },
+    ): Promise<RunPythonResult> {
+      return unwrap(
+        ipcRenderer.invoke(
+          "sa-agent:python-run",
+          scope,
+          code,
+          options?.timeoutMs ?? 30_000,
+          options?.stdin ?? "",
+        ),
+      );
     },
   },
-  mcp: {
-    async listTools(runtimeId: string, servers: Record<string, unknown>) {
-      const response = await ipcRenderer.invoke("sa-agent:mcp-list-tools", runtimeId, servers);
-
-      if (!isRecord(response) || response.ok !== true || !Array.isArray(response.tools)) {
-        throw new Error(
-          isRecord(response) && typeof response.error === "string"
-            ? response.error
-            : "Failed to list MCP tools.",
-        );
-      }
-
-      return response.tools;
+  fs: {
+    read(scope: WorkspaceScope, path: string): Promise<string> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-read", scope, path));
     },
-    async callTool(
-      runtimeId: string,
-      serverName: string,
-      toolName: string,
-      argumentsJson: Record<string, unknown>,
-    ) {
-      const response = await ipcRenderer.invoke(
-        "sa-agent:mcp-call-tool",
-        runtimeId,
-        serverName,
-        toolName,
-        argumentsJson,
+    write(scope: WorkspaceScope, path: string, content: string): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-write", scope, path, content));
+    },
+    edit(
+      scope: WorkspaceScope,
+      path: string,
+      oldString: string,
+      newString: string,
+      replaceAll: boolean,
+    ): Promise<{ replacements: number; path: string }> {
+      return unwrap(
+        ipcRenderer.invoke("sa-agent:fs-edit", scope, path, oldString, newString, replaceAll),
       );
-
-      if (!isRecord(response) || response.ok !== true || !isRecord(response.result)) {
-        throw new Error(
-          isRecord(response) && typeof response.error === "string"
-            ? response.error
-            : "Failed to call MCP tool.",
-        );
-      }
-
-      return response.result;
     },
-    async closeRuntime(runtimeId: string) {
-      const response = await ipcRenderer.invoke("sa-agent:mcp-close-runtime", runtimeId);
-
-      if (!isRecord(response) || response.ok !== true) {
-        throw new Error(
-          isRecord(response) && typeof response.error === "string"
-            ? response.error
-            : "Failed to close MCP runtime.",
-        );
-      }
+    list(scope: WorkspaceScope, path?: string): Promise<FileEntry[]> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-list", scope, path));
+    },
+    openFolder(scope: WorkspaceScope): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-open-folder", scope));
+    },
+    scopeRoot(scope: WorkspaceScope): Promise<string> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-scope-root", scope));
     },
   },
 });

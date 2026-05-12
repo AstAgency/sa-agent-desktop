@@ -15,7 +15,5 @@ tmp/
 .env.*
 !.env.example
 notes.txt
-.superpowers/
-playwright-report/
-test-results/
+resources/python-runtime/
 .npm-cache/
