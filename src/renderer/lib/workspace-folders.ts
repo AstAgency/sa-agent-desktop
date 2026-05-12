@@ -1,8 +1,11 @@
 import { getBridge } from "./bridge";
 
-export async function openProjectFolder(projectId: string): Promise<void> {
+export async function openProjectFolder(
+  projectId: string,
+  displayName?: string,
+): Promise<void> {
   try {
-    await getBridge().fs.openProjectRoot(projectId);
+    await getBridge().fs.openProjectRoot(projectId, displayName);
   } catch (error) {
     console.error("[workspace-folders] openProjectFolder", error);
   }

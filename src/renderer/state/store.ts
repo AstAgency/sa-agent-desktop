@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { AppLanguage } from "../lib/i18n";
 import type {
   Agent,
+  Billing,
   EmbeddingModelInfo,
   Message,
   Profile,
@@ -9,6 +10,14 @@ import type {
   Session,
   Summary,
 } from "../lib/types";
+
+export type ChatErrorKind = "rate_limit" | "timeout" | "generic";
+
+export type LastStreamError = {
+  kind: ChatErrorKind;
+  message: string;
+  sessionId: string;
+};
 
 export type ActiveSelection =
   | { kind: "none" }
@@ -42,6 +51,8 @@ export type ClientState = {
   language: AppLanguage;
   sidebarCollapsed: boolean;
   profileModalOpen: boolean;
+  billing: Billing | null;
+  lastStreamError: LastStreamError | null;
 };
 
 const SETTINGS_KEY = "sa-agent.settings";
@@ -90,6 +101,8 @@ const initialState: ClientState = {
   language: persisted.language ?? detectDefaultLanguage(),
   sidebarCollapsed: persisted.sidebarCollapsed ?? false,
   profileModalOpen: false,
+  billing: null,
+  lastStreamError: null,
 };
 
 function persistSettings(state: ClientState) {
@@ -144,6 +157,14 @@ export function toggleSidebarCollapsed() {
 
 export function setProfileModalOpen(open: boolean) {
   setState((state) => ({ ...state, profileModalOpen: open }));
+}
+
+export function setBilling(billing: Billing | null) {
+  setState((state) => ({ ...state, billing }));
+}
+
+export function setLastStreamError(lastStreamError: LastStreamError | null) {
+  setState((state) => ({ ...state, lastStreamError }));
 }
 
 export function subscribe(listener: Listener): () => void {

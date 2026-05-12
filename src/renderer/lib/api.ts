@@ -92,6 +92,24 @@ async function readErrorMessage(response: Response): Promise<string> {
   }
 }
 
+export class ChatCompletionError extends Error {
+  readonly status: number;
+  readonly kind: "rate_limit" | "timeout" | "generic";
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ChatCompletionError";
+    this.status = status;
+    if (status === 429) {
+      this.kind = "rate_limit";
+    } else if (status === 504 || status === 408) {
+      this.kind = "timeout";
+    } else {
+      this.kind = "generic";
+    }
+  }
+}
+
 // ============================================================================
 // Profile
 // ============================================================================
@@ -413,10 +431,10 @@ export async function streamChatCompletion(
 
   if (!response.ok) {
     const message = await readErrorMessage(response);
-    throw new Error(`${response.status} POST /v1/chat/completions: ${message}`);
+    throw new ChatCompletionError(response.status, message);
   }
   if (!response.body) {
-    throw new Error("Streaming response has no body");
+    throw new ChatCompletionError(0, "Streaming response has no body");
   }
 
   const reader = response.body.getReader();

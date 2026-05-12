@@ -231,8 +231,8 @@ export type UpdateBillingLimitsInput = {
 };
 
 export type WorkspaceScope =
-  | { kind: "project"; projectId: string }
-  | { kind: "global"; sessionId: string };
+  | { kind: "project"; projectId: string; displayName: string }
+  | { kind: "global"; sessionId: string; displayName: string };
 
 export type FileEntry = {
   name: string;
@@ -258,9 +258,7 @@ export type PythonRuntimeStatus = {
   error: string | null;
 };
 
-export type SearchProviderId = "none" | "brave" | "tavily";
-
 export type SearchConfig = {
-  provider: SearchProviderId;
-  hasKey: boolean;
+  endpoint: string;
+  defaultEndpoint: string;
 };

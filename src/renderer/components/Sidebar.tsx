@@ -51,6 +51,10 @@ export function Sidebar() {
       : selection.kind === "session"
         ? findSessionProjectId(selection.sessionId, projectSessions)
         : null;
+  const activeProject =
+    activeProjectId !== null
+      ? projects.find((entry) => entry.id === activeProjectId) ?? null
+      : null;
 
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
@@ -166,7 +170,10 @@ export function Sidebar() {
           <button
             className="sidebar-footer-button"
             disabled={!activeProjectId}
-            onClick={() => activeProjectId && void openProjectFolder(activeProjectId)}
+            onClick={() =>
+              activeProjectId &&
+              void openProjectFolder(activeProjectId, activeProject?.name)
+            }
             title={translate(language, "sidebar.openProjectFolder")}
             aria-label={translate(language, "sidebar.openProjectFolder")}
             style={{

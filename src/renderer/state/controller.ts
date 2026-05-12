@@ -1,10 +1,12 @@
 import {
+  ChatCompletionError,
   createProject,
   createSession,
   deleteProject as deleteProjectRequest,
   deleteSession as deleteSessionRequest,
   getAgents,
   getAllSessionMessages,
+  getBilling,
   getEmbeddingModelInfo,
   getGlobalSessions,
   getProfile,
@@ -17,9 +19,17 @@ import {
   updateSession as updateSessionRequest,
 } from "../lib/api";
 import { getBridge } from "../lib/bridge";
-import type { Message, Session, Summary } from "../lib/types";
+import { translate } from "../lib/i18n";
+import type { Message, Session, Summary, WorkspaceScope } from "../lib/types";
 import { SessionRuntime, type SessionRuntimeState } from "../agent/runtime";
-import { getState, setState, type ClientState } from "./store";
+import {
+  getState,
+  setBilling,
+  setLastStreamError,
+  setState,
+  type ChatErrorKind,
+  type ClientState,
+} from "./store";
 
 const DISPLAY_NAME_MAX = 30;
 
@@ -77,6 +87,7 @@ export async function bootstrap() {
       bootstrap: { ...state.bootstrap, status: "ready", error: null },
     }));
     await Promise.all(projects.map((project) => loadProjectSessions(project.id)));
+    void refreshBilling();
   } catch (error) {
     setState((state) => ({
       ...state,
@@ -86,6 +97,15 @@ export async function bootstrap() {
         error: error instanceof Error ? error.message : String(error),
       },
     }));
+  }
+}
+
+export async function refreshBilling(): Promise<void> {
+  try {
+    const billing = await getBilling();
+    setBilling(billing);
+  } catch (error) {
+    console.warn("[billing] refresh failed", error);
   }
 }
 
@@ -309,6 +329,7 @@ export async function sendMessage(content: string): Promise<void> {
   if (state.sendingMessage) throw new Error("Already sending a message");
   if (!state.profile) throw new Error("Profile not loaded");
 
+  setLastStreamError(null);
   setState((s) => ({ ...s, sendingMessage: true, streamingAssistantText: "" }));
 
   try {
@@ -351,10 +372,35 @@ export async function sendMessage(content: string): Promise<void> {
     }
 
     const runtime = await acquireRuntime(session);
-    await runtime.sendUserMessage(content);
+    try {
+      await runtime.sendUserMessage(content);
+    } catch (error) {
+      reportStreamError(error, session.id);
+      throw error;
+    }
   } finally {
     setState((s) => ({ ...s, sendingMessage: false, streamingAssistantText: "" }));
+    void refreshBilling();
   }
+}
+
+function reportStreamError(error: unknown, sessionId: string) {
+  const state = getState();
+  const language = state.language;
+  let kind: ChatErrorKind = "generic";
+  let message: string;
+  if (error instanceof ChatCompletionError) {
+    kind = error.kind;
+  }
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  if (kind === "rate_limit") {
+    message = translate(language, "chat.error.rateLimit");
+  } else if (kind === "timeout") {
+    message = translate(language, "chat.error.timeout");
+  } else {
+    message = translate(language, "chat.error.generic", { message: rawMessage });
+  }
+  setLastStreamError({ kind, message, sessionId });
 }
 
 export function abortActiveTurn() {
@@ -386,9 +432,17 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     state.agents.find((candidate) => candidate.agent_key === state.selectedAgentKey) ??
     state.agents[0] ??
     null;
-  const scope = session.project_id
-    ? { kind: "project" as const, projectId: session.project_id }
-    : { kind: "global" as const, sessionId: session.id };
+  const scope: WorkspaceScope = session.project_id
+    ? {
+        kind: "project",
+        projectId: session.project_id,
+        displayName: project?.name ?? session.project_id,
+      }
+    : {
+        kind: "global",
+        sessionId: session.id,
+        displayName: session.display_name,
+      };
   const messages = state.messagesBySession[session.id] ?? [];
   const summaries = state.summariesBySession[session.id] ?? [];
 

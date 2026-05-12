@@ -3,8 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron") as typeof import("ele
 type IpcEnvelope<T> = { ok: true; value: T } | { ok: false; error: string };
 
 type WorkspaceScope =
-  | { kind: "project"; projectId: string }
-  | { kind: "global"; sessionId: string };
+  | { kind: "project"; projectId: string; displayName: string }
+  | { kind: "global"; sessionId: string; displayName: string };
 
 type FileEntry = {
   name: string;
@@ -30,10 +30,9 @@ type PythonRuntimeStatus = {
   error: string | null;
 };
 
-type SearchProviderId = "none" | "brave" | "tavily";
 type SearchConfig = {
-  provider: SearchProviderId;
-  hasKey: boolean;
+  endpoint: string;
+  defaultEndpoint: string;
 };
 
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
@@ -105,8 +104,10 @@ contextBridge.exposeInMainWorld("saAgent", {
     openWorkspaceRoot(kind: "global" | "projects"): Promise<{ path: string }> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-open-workspace-root", kind));
     },
-    openProjectRoot(projectId: string): Promise<{ path: string }> {
-      return unwrap(ipcRenderer.invoke("sa-agent:fs-open-project-root", projectId));
+    openProjectRoot(projectId: string, displayName?: string): Promise<{ path: string }> {
+      return unwrap(
+        ipcRenderer.invoke("sa-agent:fs-open-project-root", projectId, displayName ?? ""),
+      );
     },
   },
   net: {
@@ -119,8 +120,11 @@ contextBridge.exposeInMainWorld("saAgent", {
     webSearch(query: string, limit?: number): Promise<string> {
       return unwrap(ipcRenderer.invoke("sa-agent:net-web-search", query, limit ?? 5));
     },
-    setSearchKey(provider: SearchProviderId, key: string): Promise<SearchConfig> {
-      return unwrap(ipcRenderer.invoke("sa-agent:net-set-search-key", provider, key));
+    setSearchEndpoint(endpoint: string): Promise<SearchConfig> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-set-search-endpoint", endpoint));
+    },
+    testSearchEndpoint(endpoint: string): Promise<{ ok: true }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-test-search-endpoint", endpoint));
     },
     getSearchConfig(): Promise<SearchConfig> {
       return unwrap(ipcRenderer.invoke("sa-agent:net-get-search-config"));

@@ -167,7 +167,7 @@ export function buildWorkspaceTools(
           Type.Number({ description: "Timeout in milliseconds (1000..30000, default 15000)" }),
         ),
         max_chars: Type.Optional(
-          Type.Number({ description: "Maximum output characters (100..16000, default 8000)" }),
+          Type.Number({ description: "Maximum output characters (100..200000, default 32000)" }),
         ),
         mode: Type.Optional(
           Type.String({ description: 'Output mode: "readable" (default) or "raw"' }),

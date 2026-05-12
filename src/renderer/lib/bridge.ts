@@ -3,7 +3,6 @@ import type {
   PythonRuntimeStatus,
   RunPythonResult,
   SearchConfig,
-  SearchProviderId,
   WorkspaceScope,
 } from "./types";
 
@@ -33,7 +32,7 @@ type Bridge = {
     openFolder: (scope: WorkspaceScope) => Promise<{ path: string }>;
     scopeRoot: (scope: WorkspaceScope) => Promise<string>;
     openWorkspaceRoot: (kind: "global" | "projects") => Promise<{ path: string }>;
-    openProjectRoot: (projectId: string) => Promise<{ path: string }>;
+    openProjectRoot: (projectId: string, displayName?: string) => Promise<{ path: string }>;
   };
   net: {
     fetchUrl: (
@@ -41,7 +40,8 @@ type Bridge = {
       options?: { timeoutMs?: number; maxChars?: number; mode?: "readable" | "raw" },
     ) => Promise<string>;
     webSearch: (query: string, limit?: number) => Promise<string>;
-    setSearchKey: (provider: SearchProviderId, key: string) => Promise<SearchConfig>;
+    setSearchEndpoint: (endpoint: string) => Promise<SearchConfig>;
+    testSearchEndpoint: (endpoint: string) => Promise<{ ok: true }>;
     getSearchConfig: () => Promise<SearchConfig>;
   };
 };

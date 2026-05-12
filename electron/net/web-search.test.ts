@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  formatSearchResults,
-  normalizeSearchLimit,
-} from "./web-search.js";
-import type { SearchProviderId } from "./secrets-store.js";
+import { formatSearchResults, normalizeSearchLimit } from "./web-search.js";
 
 test("normalizeSearchLimit clamps into supported range", () => {
   assert.equal(normalizeSearchLimit(undefined), 5);
@@ -13,11 +9,10 @@ test("normalizeSearchLimit clamps into supported range", () => {
   assert.equal(normalizeSearchLimit(50), 10);
 });
 
-test("formatSearchResults produces compact numbered output", () => {
-  const provider: SearchProviderId = "brave";
+test("formatSearchResults produces compact numbered output with endpoint", () => {
   const text = formatSearchResults({
     query: "react markdown best practices",
-    provider,
+    endpoint: "http://localhost:8000",
     results: [
       {
         title: "React Markdown",
@@ -34,7 +29,7 @@ test("formatSearchResults produces compact numbered output", () => {
   });
 
   assert.match(text, /^Query: "react markdown best practices"/m);
-  assert.match(text, /^Provider: brave/m);
+  assert.match(text, /^Provider: orio \(http:\/\/localhost:8000\)/m);
   assert.match(text, /^Results \(2\):/m);
   assert.match(text, /1\. React Markdown/);
   assert.match(text, /https:\/\/example\.com\/react-markdown/);

@@ -3,12 +3,30 @@ import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import { URL } from "node:url";
-import { JSDOM } from "jsdom";
-import { Readability } from "@mozilla/readability";
+
+// jsdom + @mozilla/readability are only needed for HTML extraction.
+// Lazy-load them so the pure helpers (URL allow-list, IP guard, formatters)
+// remain importable in environments where the heavy deps are not available.
+type HtmlExtractor = {
+  JSDOM: typeof import("jsdom").JSDOM;
+  Readability: typeof import("@mozilla/readability").Readability;
+};
+let htmlExtractorPromise: Promise<HtmlExtractor> | null = null;
+
+async function loadHtmlExtractor(): Promise<HtmlExtractor> {
+  if (!htmlExtractorPromise) {
+    htmlExtractorPromise = Promise.all([import("jsdom"), import("@mozilla/readability")]).then(
+      ([{ JSDOM }, { Readability }]) => ({ JSDOM, Readability }),
+    );
+  }
+  return htmlExtractorPromise;
+}
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-const DEFAULT_MAX_CHARS = 8_000;
-const MAX_RAW_BODY_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_CHARS = 32_000;
+const MAX_OUTPUT_CHARS = 200_000;
+const MIN_OUTPUT_CHARS = 100;
+const MAX_RAW_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 
 export type FetchUrlMode = "readable" | "raw";
@@ -127,8 +145,8 @@ export async function fetchUrl(
 
   const maxChars = clampNumber(
     options.maxChars,
-    100,
-    16_000,
+    MIN_OUTPUT_CHARS,
+    MAX_OUTPUT_CHARS,
     DEFAULT_MAX_CHARS,
   );
 
@@ -150,7 +168,7 @@ export async function fetchUrl(
 
   const contentType = normalizeContentType(response.headers["content-type"]);
 
-  const extracted = extractReadableContent({
+  const extracted = await extractReadableContent({
     body: response.body,
     contentType,
     mode,
@@ -249,7 +267,11 @@ async function requestOnce(
           total += chunk.length;
 
           if (total > MAX_RAW_BODY_BYTES) {
-            req.destroy(new Error("Response exceeded 2MB limit"));
+            req.destroy(
+              new Error(
+                `Response exceeded ${Math.round(MAX_RAW_BODY_BYTES / (1024 * 1024))}MB limit`,
+              ),
+            );
             return;
           }
 
@@ -332,13 +354,13 @@ async function resolvePublicAddresses(hostname: string): Promise<ResolvedAddress
   return validAddresses;
 }
 
-function extractReadableContent(input: {
+async function extractReadableContent(input: {
   body: Buffer;
   contentType: string;
   mode: FetchUrlMode;
   maxChars: number;
   sourceUrl: URL;
-}): ExtractedContent {
+}): Promise<ExtractedContent> {
   const mime = input.contentType;
   const rawText = input.body.toString("utf8");
 
@@ -372,6 +394,7 @@ function extractReadableContent(input: {
   }
 
   if (mime === "text/html" || mime === "application/xhtml+xml") {
+    const { JSDOM, Readability } = await loadHtmlExtractor();
     const dom = new JSDOM(rawText, {
       url: input.sourceUrl.toString(),
     });

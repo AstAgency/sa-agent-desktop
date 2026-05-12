@@ -574,6 +574,52 @@ details > summary:hover .row-kebab {
 }
 .chat-header h2 { margin: 0; font-size: 15px; font-weight: 500; }
 .chat-header .meta { color: var(--text-muted); font-size: 12px; }
+.chat-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.billing-badge {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--bg-elevated-strong);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.billing-badge:hover { background: var(--bg-elevated); }
+
+.billing-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid var(--border);
+  min-width: 56px;
+  line-height: 1.2;
+}
+
+.billing-cell:last-child { border-right: none; }
+
+.billing-cell .label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.billing-cell .value {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
 
 .chat-history {
   flex: 1;
@@ -746,12 +792,41 @@ details > summary:hover .row-kebab {
 .typing-bubble {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 10px 14px;
   border-radius: 12px;
   background: var(--bubble-assistant-bg);
   border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
+
+.typing-bubble .thinking-word {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.error-bubble {
+  background: color-mix(in srgb, var(--danger) 8%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border)) !important;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.error-bubble .link {
+  background: none;
+  border: none;
+  color: var(--danger);
+  padding: 0;
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+.message-role.error { color: var(--danger); }
 
 .typing-bubble .dot {
   width: 6px;
@@ -1043,6 +1118,12 @@ details > summary:hover .row-kebab {
 .profile-field .field-label {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.profile-field .field-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .profile-field input,

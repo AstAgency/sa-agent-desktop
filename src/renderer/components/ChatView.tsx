@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { abortActiveTurn, sendMessage, setSelectedAgent } from "../state/controller";
-import { selectActiveProject, selectActiveSession, useClientState } from "../state/store";
-import { translate, type AppLanguage } from "../lib/i18n";
-import type { Message } from "../lib/types";
+import { abortActiveTurn, refreshBilling, sendMessage, setSelectedAgent } from "../state/controller";
+import {
+  selectActiveProject,
+  selectActiveSession,
+  setLastStreamError,
+  useClientState,
+} from "../state/store";
+import { THINKING_WORDS, translate, type AppLanguage } from "../lib/i18n";
+import type { Billing, Message } from "../lib/types";
 import { Markdown } from "./Markdown";
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -22,6 +27,8 @@ export function ChatView() {
   const streamingText = useClientState((state) => state.streamingAssistantText);
   const sending = useClientState((state) => state.sendingMessage);
   const loadingSessionId = useClientState((state) => state.loadingSessionId);
+  const billing = useClientState((state) => state.billing);
+  const lastStreamError = useClientState((state) => state.lastStreamError);
 
   const visibleMessages = useMemo(() => filterVisibleMessages(rawMessages), [rawMessages]);
 
@@ -48,10 +55,16 @@ export function ChatView() {
 
   const showTypingIndicator = sending && streamingText.length === 0;
 
+  const showError =
+    lastStreamError && selection.kind === "session" && lastStreamError.sessionId === selection.sessionId;
+
   return (
     <main className="workspace chat-view">
       <header className="chat-header">
-        <h2>{title}</h2>
+        <div className="chat-header-top">
+          <h2>{title}</h2>
+          <BillingBadge billing={billing} language={language} />
+        </div>
         <span className="meta">
           {scopeLabel} · {translate(language, "chat.session.id")}: {sessionLabel}
         </span>
@@ -65,11 +78,19 @@ export function ChatView() {
         {streamingText.length > 0 ? (
           <StreamingMessage text={streamingText} language={language} />
         ) : null}
-        {showTypingIndicator ? <TypingIndicator language={language} /> : null}
+        {showTypingIndicator ? <ThinkingIndicator language={language} /> : null}
+        {showError ? (
+          <StreamErrorBubble
+            message={lastStreamError!.message}
+            language={language}
+            onDismiss={() => setLastStreamError(null)}
+          />
+        ) : null}
         {!isLoading &&
         visibleMessages.length === 0 &&
         streamingText.length === 0 &&
-        !showTypingIndicator ? (
+        !showTypingIndicator &&
+        !showError ? (
           <p style={{ color: "var(--text-muted)" }}>
             {translate(language, "chat.typeToStart")}
             {isNewSession ? translate(language, "chat.derivedName") : ""}
@@ -91,6 +112,97 @@ export function ChatView() {
       />
     </main>
   );
+}
+
+function BillingBadge({
+  billing,
+  language,
+}: {
+  billing: Billing | null;
+  language: AppLanguage;
+}) {
+  if (!billing) return null;
+  return (
+    <button
+      type="button"
+      className="billing-badge"
+      onClick={() => {
+        void refreshBilling();
+      }}
+      title={translate(language, "usage.refresh")}
+    >
+      <span className="billing-cell">
+        <span className="label">{translate(language, "usage.hourly")}</span>
+        <span className="value">
+          {billing.hourly_usage}/{billing.max_hourly}
+        </span>
+      </span>
+      <span className="billing-cell">
+        <span className="label">{translate(language, "usage.daily")}</span>
+        <span className="value">
+          {billing.daily_usage}/{billing.max_daily}
+        </span>
+      </span>
+      <span className="billing-cell">
+        <span className="label">{translate(language, "usage.weekly")}</span>
+        <span className="value">
+          {billing.weekly_usage}/{billing.max_weekly}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function StreamErrorBubble({
+  message,
+  language,
+  onDismiss,
+}: {
+  message: string;
+  language: AppLanguage;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="message-row assistant" role="alert">
+      <span className="message-role error">{translate(language, "chat.error.dismiss")}</span>
+      <div className="message-bubble error-bubble">
+        <span>{message}</span>
+        <button type="button" className="link" onClick={onDismiss}>
+          {translate(language, "chat.error.dismiss")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ThinkingIndicator({ language }: { language: AppLanguage }) {
+  const word = useThinkingWord(language);
+  return (
+    <div className="message-row assistant" aria-live="polite">
+      <span className="message-role">{translate(language, "chat.role.thinking")}</span>
+      <div className="typing-bubble" aria-label={translate(language, "chat.role.thinking")}>
+        <span className="thinking-word">{word}…</span>
+        <span className="dot" />
+        <span className="dot" />
+        <span className="dot" />
+      </div>
+    </div>
+  );
+}
+
+function useThinkingWord(language: AppLanguage): string {
+  const list = THINKING_WORDS[language] ?? THINKING_WORDS.en;
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * list.length));
+  useEffect(() => {
+    setIndex(Math.floor(Math.random() * list.length));
+  }, [language, list.length]);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setIndex((prev) => (prev + 1) % list.length);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [list.length]);
+  return list[index] ?? list[0] ?? "";
 }
 
 function filterVisibleMessages(messages: Message[]): Message[] {
@@ -126,19 +238,6 @@ function StreamingMessage({ text, language }: { text: string; language: AppLangu
       <span className="message-role">{translate(language, "chat.role.assistant")}</span>
       <div className="message-bubble">
         <Markdown content={text} />
-      </div>
-    </div>
-  );
-}
-
-function TypingIndicator({ language }: { language: AppLanguage }) {
-  return (
-    <div className="message-row assistant" aria-live="polite">
-      <span className="message-role">{translate(language, "chat.role.thinking")}</span>
-      <div className="typing-bubble" aria-label={translate(language, "chat.role.thinking")}>
-        <span className="dot" />
-        <span className="dot" />
-        <span className="dot" />
       </div>
     </div>
   );

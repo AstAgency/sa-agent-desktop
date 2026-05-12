@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getBridge } from "../lib/bridge";
-import { translate, type AppLanguage } from "../lib/i18n";
+import { translate } from "../lib/i18n";
 import { getCurrentBackendUrl } from "../lib/api";
-import type { SearchProviderId } from "../lib/types";
 import {
   setLanguage,
   setProfileModalOpen,
@@ -10,14 +9,14 @@ import {
   useClientState,
   type ThemeMode,
 } from "../state/store";
+import type { AppLanguage } from "../lib/i18n";
 
 export function UserProfileModal() {
   const language = useClientState((state) => state.language);
   const theme = useClientState((state) => state.theme);
   const profile = useClientState((state) => state.profile);
-  const [searchProvider, setSearchProvider] = useState<SearchProviderId>("none");
-  const [apiKey, setApiKey] = useState("");
-  const [hasSavedKey, setHasSavedKey] = useState(false);
+  const [searchEndpoint, setSearchEndpoint] = useState("");
+  const [defaultSearchEndpoint, setDefaultSearchEndpoint] = useState("http://localhost:8000");
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -38,8 +37,8 @@ export function UserProfileModal() {
       .net.getSearchConfig()
       .then((config) => {
         if (cancelled) return;
-        setSearchProvider(config.provider);
-        setHasSavedKey(config.hasKey);
+        setSearchEndpoint(config.endpoint);
+        setDefaultSearchEndpoint(config.defaultEndpoint);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -53,17 +52,15 @@ export function UserProfileModal() {
   const displayName = profile?.name ?? translate(language, "profile.unknown");
   const initials = getInitials(displayName);
 
-  async function handleSearchTest() {
+  async function handleSearchSave() {
     setSearchBusy(true);
     setSearchMessage(null);
     setSearchError(null);
     try {
-      const config = await getBridge().net.setSearchKey(searchProvider, apiKey);
-      setHasSavedKey(config.hasKey);
-      if (searchProvider !== "none") {
-        await getBridge().net.webSearch("react markdown best practices", 1);
-      }
-      setApiKey("");
+      const config = await getBridge().net.setSearchEndpoint(searchEndpoint);
+      setSearchEndpoint(config.endpoint);
+      setDefaultSearchEndpoint(config.defaultEndpoint);
+      await getBridge().net.testSearchEndpoint(config.endpoint);
       setSearchMessage(translate(language, "profile.search.testOk"));
     } catch (error) {
       setSearchError(
@@ -158,39 +155,31 @@ export function UserProfileModal() {
         <div className="section">
           <h3>{translate(language, "profile.section.search")}</h3>
           <label className="profile-field">
-            <span className="field-label">{translate(language, "profile.search.provider")}</span>
-            <select
-              value={searchProvider}
+            <span className="field-label">{translate(language, "profile.search.endpoint")}</span>
+            <input
+              type="url"
+              value={searchEndpoint}
+              placeholder={defaultSearchEndpoint}
               onChange={(event) => {
-                setSearchProvider(event.target.value as SearchProviderId);
+                setSearchEndpoint(event.target.value);
                 setSearchMessage(null);
                 setSearchError(null);
               }}
-            >
-              <option value="none">{translate(language, "profile.search.none")}</option>
-              <option value="brave">Brave Search</option>
-              <option value="tavily">Tavily</option>
-            </select>
-          </label>
-          <label className="profile-field">
-            <span className="field-label">{translate(language, "profile.search.apiKey")}</span>
-            <input
-              type="password"
-              value={apiKey}
-              placeholder={hasSavedKey ? "••••••••" : ""}
-              onChange={(event) => setApiKey(event.target.value)}
             />
+            <span className="field-hint">
+              {translate(language, "profile.search.endpointHint")}
+            </span>
           </label>
           <div className="profile-inline-actions">
             <button
               className="primary"
               type="button"
-              onClick={() => void handleSearchTest()}
+              onClick={() => void handleSearchSave()}
               disabled={searchBusy}
             >
               {searchBusy
-                ? `${translate(language, "profile.search.test")}…`
-                : translate(language, "profile.search.test")}
+                ? translate(language, "profile.search.saving")
+                : translate(language, "profile.search.save")}
             </button>
           </div>
           {searchMessage ? <div className="profile-status ok">{searchMessage}</div> : null}

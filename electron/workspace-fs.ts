@@ -4,8 +4,8 @@ import path from "node:path";
 import { app } from "electron";
 
 export type WorkspaceScope =
-  | { kind: "project"; projectId: string }
-  | { kind: "global"; sessionId: string };
+  | { kind: "project"; projectId: string; displayName: string }
+  | { kind: "global"; sessionId: string; displayName: string };
 
 export type FileEntry = {
   name: string;
@@ -16,26 +16,109 @@ export type FileEntry = {
 };
 
 const TMP_SUBDIR = ".tmp";
+const ID_SUFFIX_LENGTH = 8;
+const FOLDER_NAME_LIMIT = 80;
+const ID_SEPARATOR = "__";
 
-export function resolveScopeRoot(scope: WorkspaceScope): string {
+type ScopeParts = {
+  parent: string;
+  id: string;
+  displayName: string;
+};
+
+function getScopeParts(scope: WorkspaceScope): ScopeParts {
   const userData = app.getPath("userData");
   if (scope.kind === "project") {
-    if (!isSafeId(scope.projectId)) {
-      throw new Error("Invalid project id");
+    if (!isSafeId(scope.projectId)) throw new Error("Invalid project id");
+    return {
+      parent: path.join(userData, "projects"),
+      id: scope.projectId,
+      displayName: scope.displayName ?? scope.projectId,
+    };
+  }
+  if (!isSafeId(scope.sessionId)) throw new Error("Invalid session id");
+  return {
+    parent: path.join(userData, "global"),
+    id: scope.sessionId,
+    displayName: scope.displayName ?? scope.sessionId,
+  };
+}
+
+function shortId(id: string): string {
+  const cleaned = id.replace(/[^A-Za-z0-9]/g, "");
+  return cleaned.slice(0, ID_SUFFIX_LENGTH) || "id";
+}
+
+/**
+ * Filesystem-safe representation of a display name. We keep it broad enough to
+ * survive most natural-language session names (incl. cyrillic) while
+ * sanitizing anything that would break on Windows or shells:
+ *   <>:"/\|?*    + control codes + reserved trailing dots/spaces
+ */
+function sanitizeName(value: string): string {
+  const collapsed = value
+    .normalize("NFC")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  const limited = collapsed.slice(0, FOLDER_NAME_LIMIT).trim();
+  return limited.length > 0 ? limited : "untitled";
+}
+
+function buildFolderName(parts: ScopeParts): string {
+  return `${sanitizeName(parts.displayName)}${ID_SEPARATOR}${shortId(parts.id)}`;
+}
+
+export function resolveScopeRoot(scope: WorkspaceScope): string {
+  const parts = getScopeParts(scope);
+  return path.join(parts.parent, buildFolderName(parts));
+}
+
+async function findExistingFolderForId(parts: ScopeParts): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(parts.parent);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const expectedSuffix = `${ID_SEPARATOR}${shortId(parts.id)}`;
+  // Match anything ending with our id suffix — covers folders renamed
+  // out-of-band, plus legacy folders that were named exactly by id
+  // (when id length equals ID_SUFFIX_LENGTH).
+  for (const entry of entries) {
+    if (entry.endsWith(expectedSuffix)) {
+      return path.join(parts.parent, entry);
     }
-    return path.join(userData, "projects", scope.projectId);
   }
-  if (!isSafeId(scope.sessionId)) {
-    throw new Error("Invalid session id");
-  }
-  return path.join(userData, "global", scope.sessionId);
+  // Legacy: folder was named exactly the full id (older versions of the app).
+  const legacyExact = path.join(parts.parent, parts.id);
+  if (entries.includes(parts.id)) return legacyExact;
+  return null;
 }
 
 export async function ensureScopeRoot(scope: WorkspaceScope): Promise<string> {
-  const root = resolveScopeRoot(scope);
-  await fs.mkdir(root, { recursive: true });
-  await fs.mkdir(path.join(root, TMP_SUBDIR), { recursive: true });
-  return root;
+  const parts = getScopeParts(scope);
+  const desired = path.join(parts.parent, buildFolderName(parts));
+  await fs.mkdir(parts.parent, { recursive: true });
+
+  if (!existsSync(desired)) {
+    const existing = await findExistingFolderForId(parts);
+    if (existing && existing !== desired) {
+      try {
+        await fs.rename(existing, desired);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw error;
+      }
+    }
+  }
+
+  await fs.mkdir(desired, { recursive: true });
+  await fs.mkdir(path.join(desired, TMP_SUBDIR), { recursive: true });
+  return desired;
 }
 
 export function resolveTmpDir(scope: WorkspaceScope): string {

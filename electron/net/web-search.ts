@@ -1,15 +1,9 @@
-import { setTimeout as delay } from "node:timers/promises";
-import type { SearchProviderId, SecretsStore } from "./secrets-store.js";
+import type { SecretsStore } from "./secrets-store.js";
 
 export type SearchResult = {
   title: string;
   url: string;
   snippet: string;
-};
-
-export type SearchProvider = {
-  id: Exclude<SearchProviderId, "none">;
-  search: (query: string, limit: number, signal: AbortSignal) => Promise<SearchResult[]>;
 };
 
 type SearchDeps = {
@@ -19,7 +13,7 @@ type SearchDeps = {
 
 const DEFAULT_SEARCH_LIMIT = 5;
 const MAX_SEARCH_LIMIT = 10;
-const SEARCH_TIMEOUT_MS = 15_000;
+const SEARCH_TIMEOUT_MS = 20_000;
 
 export function normalizeSearchLimit(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_SEARCH_LIMIT;
@@ -28,12 +22,12 @@ export function normalizeSearchLimit(value: unknown): number {
 
 export function formatSearchResults(input: {
   query: string;
-  provider: Exclude<SearchProviderId, "none">;
+  endpoint: string;
   results: SearchResult[];
 }): string {
   const lines = [
     `Query: "${input.query}"`,
-    `Provider: ${input.provider}`,
+    `Provider: orio (${input.endpoint})`,
     `Results (${input.results.length}):`,
   ];
   for (const [index, result] of input.results.entries()) {
@@ -54,104 +48,94 @@ export async function runSearch(
   if (trimmedQuery.length > 256) throw new Error("query must be 256 chars or fewer");
 
   const config = await deps.secretsStore.getSearchConfig();
-  if (config.provider === "none" || !config.hasKey) {
+  const endpoint = config.endpoint;
+  if (!endpoint) {
     throw new Error(
-      "Web search is not configured. Open Profile → Settings → Web search to add an API key.",
-    );
-  }
-
-  const key = await deps.secretsStore.getSearchKey(config.provider);
-  if (!key) {
-    throw new Error(
-      "Web search is not configured. Open Profile → Settings → Web search to add an API key.",
+      "Web search endpoint is not configured. Open Profile → Web search to set the OrioSearch URL.",
     );
   }
 
   const fetchImpl = deps.fetchImpl ?? fetch;
   const controller = new AbortController();
-  const timeout = delay(SEARCH_TIMEOUT_MS, undefined, { signal: controller.signal })
-    .then(() => controller.abort(new Error(`Timed out after ${SEARCH_TIMEOUT_MS}ms`)))
-    .catch(() => undefined);
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
   try {
-    const provider = createProvider(config.provider, key, fetchImpl);
-    const results = await provider.search(trimmedQuery, normalizeSearchLimit(limit), controller.signal);
-    return formatSearchResults({ query: trimmedQuery, provider: provider.id, results });
+    const response = await fetchImpl(`${endpoint}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        query: trimmedQuery,
+        max_results: normalizeSearchLimit(limit),
+        search_depth: "basic",
+        topic: "general",
+        include_answer: false,
+        include_images: false,
+        include_raw_content: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await safeReadError(response);
+      throw new Error(
+        `OrioSearch request failed (${response.status}${detail ? `: ${detail}` : ""})`,
+      );
+    }
+
+    const payload = (await response.json()) as {
+      results?: Array<{ title?: string; url?: string; content?: string }>;
+    };
+
+    const results: SearchResult[] = (payload.results ?? [])
+      .slice(0, normalizeSearchLimit(limit))
+      .map((entry) => ({
+        title: cleanText(entry.title, "Untitled result"),
+        url: cleanText(entry.url, ""),
+        snippet: cleanText(entry.content, ""),
+      }))
+      .filter((entry) => entry.url.length > 0);
+
+    return formatSearchResults({ query: trimmedQuery, endpoint, results });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`OrioSearch request timed out after ${SEARCH_TIMEOUT_MS}ms`);
+    }
+    throw error instanceof Error
+      ? error
+      : new Error(String(error));
   } finally {
-    controller.abort();
-    await timeout;
+    clearTimeout(timer);
   }
 }
 
-function createProvider(
-  provider: Exclude<SearchProviderId, "none">,
-  apiKey: string,
-  fetchImpl: typeof fetch,
-): SearchProvider {
-  if (provider === "brave") {
-    return {
-      id: "brave",
-      async search(query, limit, signal) {
-        const url = new URL("https://api.search.brave.com/res/v1/web/search");
-        url.searchParams.set("q", query);
-        url.searchParams.set("count", String(limit));
-        url.searchParams.set("text_decorations", "false");
-        const response = await fetchImpl(url, {
-          headers: {
-            Accept: "application/json",
-            "X-Subscription-Token": apiKey,
-          },
-          signal,
-        });
-        if (!response.ok) throw new Error(`Search provider request failed with status ${response.status}`);
-        const payload = (await response.json()) as {
-          web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-        };
-        return (payload.web?.results ?? [])
-          .slice(0, limit)
-          .map((entry) => ({
-            title: cleanText(entry.title, "Untitled result"),
-            url: cleanText(entry.url, ""),
-            snippet: cleanText(entry.description, ""),
-          }))
-          .filter((entry) => entry.url.length > 0);
-      },
-    };
-  }
+export async function pingSearchEndpoint(
+  endpoint: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const normalized = endpoint.trim().replace(/\/+$/, "");
+  if (normalized.length === 0) throw new Error("Endpoint URL is empty");
 
-  return {
-    id: "tavily",
-    async search(query, limit, signal) {
-      const response = await fetchImpl("https://api.tavily.com/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          api_key: apiKey,
-          query,
-          max_results: limit,
-          search_depth: "basic",
-          include_answer: false,
-          include_raw_content: false,
-        }),
-        signal,
-      });
-      if (!response.ok) throw new Error(`Search provider request failed with status ${response.status}`);
-      const payload = (await response.json()) as {
-        results?: Array<{ title?: string; url?: string; content?: string }>;
-      };
-      return (payload.results ?? [])
-        .slice(0, limit)
-        .map((entry) => ({
-          title: cleanText(entry.title, "Untitled result"),
-          url: cleanText(entry.url, ""),
-          snippet: cleanText(entry.content, ""),
-        }))
-        .filter((entry) => entry.url.length > 0);
-    },
-  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetchImpl(`${normalized}/health`, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Health check failed with status ${response.status}`);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("Endpoint health check timed out");
+    throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function safeReadError(response: Response): Promise<string | null> {
+  try {
+    const payload = (await response.json()) as { detail?: string } | undefined;
+    if (payload?.detail) return payload.detail;
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 function cleanText(value: unknown, fallback: string): string {

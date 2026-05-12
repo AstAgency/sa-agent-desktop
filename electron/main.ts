@@ -1,12 +1,12 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApplicationMenuTemplate } from "./application-menu.js";
 import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
 import { fetchUrl } from "./net/http-fetcher.js";
-import { createSecretsStore, type SearchProviderId } from "./net/secrets-store.js";
-import { runSearch } from "./net/web-search.js";
+import { createSecretsStore } from "./net/secrets-store.js";
+import { pingSearchEndpoint, runSearch } from "./net/web-search.js";
 import {
   editFile,
   ensureScopeRoot,
@@ -116,11 +116,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseScope(payload: unknown): WorkspaceScope {
   if (!isRecord(payload)) throw new Error("Invalid workspace scope");
+  const displayName =
+    typeof payload.displayName === "string" && payload.displayName.trim().length > 0
+      ? payload.displayName
+      : "";
   if (payload.kind === "project" && typeof payload.projectId === "string") {
-    return { kind: "project", projectId: payload.projectId };
+    return {
+      kind: "project",
+      projectId: payload.projectId,
+      displayName: displayName || payload.projectId,
+    };
   }
   if (payload.kind === "global" && typeof payload.sessionId === "string") {
-    return { kind: "global", sessionId: payload.sessionId };
+    return {
+      kind: "global",
+      sessionId: payload.sessionId,
+      displayName: displayName || payload.sessionId,
+    };
   }
   throw new Error("Invalid workspace scope");
 }
@@ -136,7 +148,7 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   const secretsStore = createSecretsStore({
     userDataPath: app.getPath("userData"),
-    encryption: safeStorage,
+    defaultSearchEndpoint: process.env.SA_AGENT_ORIO_URL,
   });
   const userAgent = `SA-AgentDesktop/${app.getVersion()} (+https://github.com/AstAgency/sa-agent-desktop)`;
 
@@ -266,15 +278,23 @@ app.whenReady().then(async () => {
     }),
   );
 
-  ipcMain.handle("sa-agent:fs-open-project-root", (_event, projectIdPayload: unknown) =>
-    ipcResult(async () => {
-      if (typeof projectIdPayload !== "string") throw new Error("projectId must be a string");
-      const scope = parseScope({ kind: "project", projectId: projectIdPayload });
-      const root = await ensureScopeRoot(scope);
-      const error = await shell.openPath(root);
-      if (error) throw new Error(error);
-      return { path: root };
-    }),
+  ipcMain.handle(
+    "sa-agent:fs-open-project-root",
+    (_event, projectIdPayload: unknown, displayNamePayload: unknown) =>
+      ipcResult(async () => {
+        if (typeof projectIdPayload !== "string") throw new Error("projectId must be a string");
+        const displayName =
+          typeof displayNamePayload === "string" ? displayNamePayload : projectIdPayload;
+        const scope = parseScope({
+          kind: "project",
+          projectId: projectIdPayload,
+          displayName,
+        });
+        const root = await ensureScopeRoot(scope);
+        const error = await shell.openPath(root);
+        if (error) throw new Error(error);
+        return { path: root };
+      }),
   );
 
   ipcMain.handle("sa-agent:net-fetch-url", (_event, urlPayload: unknown, optionsPayload: unknown) =>
@@ -300,19 +320,20 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
-    "sa-agent:net-set-search-key",
-    (_event, providerPayload: unknown, keyPayload: unknown) =>
+    "sa-agent:net-set-search-endpoint",
+    (_event, endpointPayload: unknown) =>
       ipcResult(async () => {
-        if (
-          providerPayload !== "none" &&
-          providerPayload !== "brave" &&
-          providerPayload !== "tavily"
-        ) {
-          throw new Error("Unsupported search provider");
-        }
-        if (typeof keyPayload !== "string") throw new Error("key must be a string");
-        return secretsStore.setSearchKey(providerPayload satisfies SearchProviderId, keyPayload);
+        if (typeof endpointPayload !== "string") throw new Error("endpoint must be a string");
+        return secretsStore.setSearchEndpoint(endpointPayload);
       }),
+  );
+
+  ipcMain.handle("sa-agent:net-test-search-endpoint", (_event, endpointPayload: unknown) =>
+    ipcResult(async () => {
+      if (typeof endpointPayload !== "string") throw new Error("endpoint must be a string");
+      await pingSearchEndpoint(endpointPayload);
+      return { ok: true as const };
+    }),
   );
 
   ipcMain.handle("sa-agent:net-get-search-config", () =>

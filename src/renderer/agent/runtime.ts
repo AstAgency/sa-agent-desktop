@@ -164,6 +164,10 @@ export class SessionRuntime {
     try {
       await this.agent.continue();
     } finally {
+      // Wait for queued persistAgentMessage calls so the final assistant
+      // message lands in state.messages before we clear the streaming text —
+      // otherwise the bubble briefly disappears and the UI looks broken.
+      await this.persistenceChain;
       this.state = { ...this.state, isStreaming: false, streamingAssistantText: "" };
       this.streamingAssistantText = "";
       this.notify();
@@ -275,6 +279,13 @@ export class SessionRuntime {
     let textContentIndex: number | null = null;
     let textContent: TextContent | null = null;
     this.streamingAssistantText = "";
+
+    // Clear any leftover streaming text from the previous round (e.g. after a
+    // toolUse turn). Otherwise the UI keeps showing the previous round's text
+    // until the first delta of the new round arrives, which looks like a
+    // duplicate of the previous assistant message.
+    this.state = { ...this.state, streamingAssistantText: "" };
+    this.notify();
 
     try {
       // Ensure prior tool/assistant persistence has settled before reading
