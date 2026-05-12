@@ -3,6 +3,8 @@ import { abortActiveTurn, sendMessage, setSelectedAgent } from "../state/control
 import { selectActiveProject, selectActiveSession, useClientState } from "../state/store";
 import type { Message } from "../lib/types";
 
+const EMPTY_MESSAGES: Message[] = [];
+
 export function ChatView() {
   const selection = useClientState((state) => state.selection);
   const session = useClientState(selectActiveSession);
@@ -10,7 +12,9 @@ export function ChatView() {
   const agents = useClientState((state) => state.agents);
   const selectedAgentKey = useClientState((state) => state.selectedAgentKey);
   const messages = useClientState((state) =>
-    state.selection.kind === "session" ? state.messagesBySession[state.selection.sessionId] ?? [] : [],
+    state.selection.kind === "session"
+      ? state.messagesBySession[state.selection.sessionId] ?? EMPTY_MESSAGES
+      : EMPTY_MESSAGES,
   );
   const streamingText = useClientState((state) => state.streamingAssistantText);
   const sending = useClientState((state) => state.sendingMessage);
