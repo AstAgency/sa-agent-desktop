@@ -30,6 +30,12 @@ type PythonRuntimeStatus = {
   error: string | null;
 };
 
+type SearchProviderId = "none" | "brave" | "tavily";
+type SearchConfig = {
+  provider: SearchProviderId;
+  hasKey: boolean;
+};
+
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
   const result = await invocation;
   if (!result || typeof result !== "object") {
@@ -101,6 +107,23 @@ contextBridge.exposeInMainWorld("saAgent", {
     },
     openProjectRoot(projectId: string): Promise<{ path: string }> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-open-project-root", projectId));
+    },
+  },
+  net: {
+    fetchUrl(
+      url: string,
+      options?: { timeoutMs?: number; maxChars?: number; mode?: "readable" | "raw" },
+    ): Promise<string> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-fetch-url", url, options ?? {}));
+    },
+    webSearch(query: string, limit?: number): Promise<string> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-web-search", query, limit ?? 5));
+    },
+    setSearchKey(provider: SearchProviderId, key: string): Promise<SearchConfig> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-set-search-key", provider, key));
+    },
+    getSearchConfig(): Promise<SearchConfig> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-get-search-config"));
     },
   },
 });

@@ -1,4 +1,11 @@
-import type { FileEntry, PythonRuntimeStatus, RunPythonResult, WorkspaceScope } from "./types";
+import type {
+  FileEntry,
+  PythonRuntimeStatus,
+  RunPythonResult,
+  SearchConfig,
+  SearchProviderId,
+  WorkspaceScope,
+} from "./types";
 
 type Bridge = {
   python: {
@@ -27,6 +34,15 @@ type Bridge = {
     scopeRoot: (scope: WorkspaceScope) => Promise<string>;
     openWorkspaceRoot: (kind: "global" | "projects") => Promise<{ path: string }>;
     openProjectRoot: (projectId: string) => Promise<{ path: string }>;
+  };
+  net: {
+    fetchUrl: (
+      url: string,
+      options?: { timeoutMs?: number; maxChars?: number; mode?: "readable" | "raw" },
+    ) => Promise<string>;
+    webSearch: (query: string, limit?: number) => Promise<string>;
+    setSearchKey: (provider: SearchProviderId, key: string) => Promise<SearchConfig>;
+    getSearchConfig: () => Promise<SearchConfig>;
   };
 };
 

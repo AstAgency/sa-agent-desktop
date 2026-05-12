@@ -26,6 +26,7 @@ export function buildWorkspaceTools(
   actions: WorkspaceToolActions,
 ): ToolDefinition[] {
   const fs = getBridge().fs;
+  const net = getBridge().net;
   const python = getBridge().python;
 
   const readFileTool: ToolDefinition = {
@@ -154,6 +155,58 @@ export function buildWorkspaceTools(
     },
   };
 
+  const fetchUrlTool: ToolDefinition = {
+    name: "fetch_url",
+    label: "Fetch URL",
+    description:
+      "Fetch a URL (http/https only) and return its readable text content. HTML is converted via @mozilla/readability, JSON is pretty-printed, plain text is passed through. Private and loopback addresses are blocked.",
+    parameters: Type.Object(
+      {
+        url: Type.String({ description: "HTTP or HTTPS URL to fetch" }),
+        timeout_ms: Type.Optional(
+          Type.Number({ description: "Timeout in milliseconds (1000..30000, default 15000)" }),
+        ),
+        max_chars: Type.Optional(
+          Type.Number({ description: "Maximum output characters (100..16000, default 8000)" }),
+        ),
+        mode: Type.Optional(
+          Type.String({ description: 'Output mode: "readable" (default) or "raw"' }),
+        ),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const url = pickString(args, "url");
+      const argRecord = (args ?? {}) as Record<string, unknown>;
+      const text = await net.fetchUrl(url, {
+        timeoutMs: typeof argRecord.timeout_ms === "number" ? argRecord.timeout_ms : undefined,
+        maxChars: typeof argRecord.max_chars === "number" ? argRecord.max_chars : undefined,
+        mode: argRecord.mode === "raw" ? "raw" : "readable",
+      });
+      return textResult(text, { url });
+    },
+  };
+
+  const webSearchTool: ToolDefinition = {
+    name: "web_search",
+    label: "Web search",
+    description:
+      "Run a web search via the configured provider (Brave or Tavily). Returns top results with title, URL, and snippet.",
+    parameters: Type.Object(
+      {
+        query: Type.String({ description: "Search query (1..256 chars)" }),
+        limit: Type.Optional(Type.Number({ description: "Result count (1..10, default 5)" })),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const query = pickString(args, "query");
+      const argRecord = (args ?? {}) as Record<string, unknown>;
+      const text = await net.webSearch(query, typeof argRecord.limit === "number" ? argRecord.limit : undefined);
+      return textResult(text, { query });
+    },
+  };
+
   const updateGlobalMemoryTool: ToolDefinition = {
     name: "update_global_memory",
     label: "Update global memory",
@@ -231,6 +284,8 @@ export function buildWorkspaceTools(
     editFileTool,
     listFilesTool,
     runPythonTool,
+    fetchUrlTool,
+    webSearchTool,
     updateGlobalMemoryTool,
   ];
   if (scope.kind === "global") tools.push(createProjectTool);

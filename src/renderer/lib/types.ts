@@ -257,3 +257,10 @@ export type PythonRuntimeStatus = {
   dimensions: number | null;
   error: string | null;
 };
+
+export type SearchProviderId = "none" | "brave" | "tavily";
+
+export type SearchConfig = {
+  provider: SearchProviderId;
+  hasKey: boolean;
+};

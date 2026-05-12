@@ -1,9 +1,12 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApplicationMenuTemplate } from "./application-menu.js";
 import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
+import { fetchUrl } from "./net/http-fetcher.js";
+import { createSecretsStore, type SearchProviderId } from "./net/secrets-store.js";
+import { runSearch } from "./net/web-search.js";
 import {
   editFile,
   ensureScopeRoot,
@@ -131,6 +134,11 @@ function ipcResult<T>(handler: () => Promise<T>): Promise<{ ok: true; value: T }
 app.whenReady().then(async () => {
   configureApplicationBranding();
   installApplicationMenu();
+  const secretsStore = createSecretsStore({
+    userDataPath: app.getPath("userData"),
+    encryption: safeStorage,
+  });
+  const userAgent = `SA-AgentDesktop/${app.getVersion()} (+https://github.com/AstAgency/sa-agent-desktop)`;
 
   ipcMain.handle("sa-agent:python-status", () => pythonRuntime.getStatus());
 
@@ -267,6 +275,48 @@ app.whenReady().then(async () => {
       if (error) throw new Error(error);
       return { path: root };
     }),
+  );
+
+  ipcMain.handle("sa-agent:net-fetch-url", (_event, urlPayload: unknown, optionsPayload: unknown) =>
+    ipcResult(async () => {
+      if (typeof urlPayload !== "string") throw new Error("url must be a string");
+      const options = isRecord(optionsPayload) ? optionsPayload : {};
+      return fetchUrl(urlPayload, {
+        timeoutMs: typeof options.timeoutMs === "number" ? options.timeoutMs : undefined,
+        maxChars: typeof options.maxChars === "number" ? options.maxChars : undefined,
+        mode: options.mode === "raw" ? "raw" : "readable",
+        userAgent,
+      });
+    }),
+  );
+
+  ipcMain.handle("sa-agent:net-web-search", (_event, queryPayload: unknown, limitPayload: unknown) =>
+    ipcResult(async () => {
+      if (typeof queryPayload !== "string") throw new Error("query must be a string");
+      return runSearch(queryPayload, typeof limitPayload === "number" ? limitPayload : 5, {
+        secretsStore,
+      });
+    }),
+  );
+
+  ipcMain.handle(
+    "sa-agent:net-set-search-key",
+    (_event, providerPayload: unknown, keyPayload: unknown) =>
+      ipcResult(async () => {
+        if (
+          providerPayload !== "none" &&
+          providerPayload !== "brave" &&
+          providerPayload !== "tavily"
+        ) {
+          throw new Error("Unsupported search provider");
+        }
+        if (typeof keyPayload !== "string") throw new Error("key must be a string");
+        return secretsStore.setSearchKey(providerPayload satisfies SearchProviderId, keyPayload);
+      }),
+  );
+
+  ipcMain.handle("sa-agent:net-get-search-config", () =>
+    ipcResult(async () => secretsStore.getSearchConfig()),
   );
 
   pythonRuntime.start().catch((error) => {
