@@ -96,5 +96,11 @@ contextBridge.exposeInMainWorld("saAgent", {
     scopeRoot(scope: WorkspaceScope): Promise<string> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-scope-root", scope));
     },
+    openWorkspaceRoot(kind: "global" | "projects"): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-open-workspace-root", kind));
+    },
+    openProjectRoot(projectId: string): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-open-project-root", projectId));
+    },
   },
 });

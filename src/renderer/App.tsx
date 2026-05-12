@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
+import { UserProfileModal } from "./components/UserProfileModal";
+import { translate } from "./lib/i18n";
 import { bootstrap, startPythonRuntime } from "./state/controller";
 import { useClientState } from "./state/store";
 
@@ -9,6 +11,18 @@ export function App() {
   const error = useClientState((state) => state.bootstrap.error);
   const pythonReady = useClientState((state) => state.bootstrap.pythonReady);
   const pythonError = useClientState((state) => state.bootstrap.pythonError);
+  const theme = useClientState((state) => state.theme);
+  const language = useClientState((state) => state.language);
+  const sidebarCollapsed = useClientState((state) => state.sidebarCollapsed);
+  const profileModalOpen = useClientState((state) => state.profileModalOpen);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("lang", language);
+  }, [language]);
 
   useEffect(() => {
     void initialize();
@@ -17,17 +31,18 @@ export function App() {
   if (status !== "ready") {
     return (
       <section className="boot-screen">
-        <h1>SA-Agent Desktop</h1>
+        <h1>{translate(language, "app.title")}</h1>
         <p>
           {status === "loading"
-            ? "Connecting to backend…"
+            ? translate(language, "boot.connecting")
             : status === "error"
-              ? "Failed to bootstrap"
-              : "Starting…"}
+              ? translate(language, "boot.failed")
+              : translate(language, "boot.starting")}
         </p>
         {!pythonReady ? (
           <p style={{ color: "var(--text-muted)" }}>
-            Starting local Python runtime{pythonError ? ` — ${pythonError}` : "…"}
+            {translate(language, "boot.pythonStarting")}
+            {pythonError ? ` — ${pythonError}` : "…"}
           </p>
         ) : null}
         {error ? (
@@ -43,7 +58,7 @@ export function App() {
               void bootstrap();
             }}
           >
-            Retry
+            {translate(language, "boot.retry")}
           </button>
         ) : null}
       </section>
@@ -51,9 +66,10 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " collapsed" : ""}`}>
       <Sidebar />
       <ChatView />
+      {profileModalOpen ? <UserProfileModal /> : null}
     </div>
   );
 }

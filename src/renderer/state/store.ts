@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { AppLanguage } from "../lib/i18n";
 import type {
   Agent,
   EmbeddingModelInfo,
@@ -14,6 +15,8 @@ export type ActiveSelection =
   | { kind: "new-global" }
   | { kind: "new-project"; projectId: string }
   | { kind: "session"; sessionId: string };
+
+export type ThemeMode = "dark" | "light";
 
 export type ClientState = {
   bootstrap: {
@@ -35,7 +38,38 @@ export type ClientState = {
   loadingSessionId: string | null;
   sendingMessage: boolean;
   streamingAssistantText: string;
+  theme: ThemeMode;
+  language: AppLanguage;
+  sidebarCollapsed: boolean;
+  profileModalOpen: boolean;
 };
+
+const SETTINGS_KEY = "sa-agent.settings";
+type PersistedSettings = {
+  theme?: ThemeMode;
+  language?: AppLanguage;
+  sidebarCollapsed?: boolean;
+};
+
+function readPersistedSettings(): PersistedSettings {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PersistedSettings;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function detectDefaultLanguage(): AppLanguage {
+  if (typeof navigator === "undefined") return "en";
+  const tag = (navigator.language || "en").toLowerCase();
+  return tag.startsWith("ru") ? "ru" : "en";
+}
+
+const persisted = readPersistedSettings();
 
 const initialState: ClientState = {
   bootstrap: { status: "idle", error: null, pythonReady: false, pythonError: null },
@@ -52,7 +86,25 @@ const initialState: ClientState = {
   loadingSessionId: null,
   sendingMessage: false,
   streamingAssistantText: "",
+  theme: persisted.theme ?? "dark",
+  language: persisted.language ?? detectDefaultLanguage(),
+  sidebarCollapsed: persisted.sidebarCollapsed ?? false,
+  profileModalOpen: false,
 };
+
+function persistSettings(state: ClientState) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: PersistedSettings = {
+      theme: state.theme,
+      language: state.language,
+      sidebarCollapsed: state.sidebarCollapsed,
+    };
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 type Listener = () => void;
 
@@ -68,8 +120,30 @@ export function getState(): ClientState {
 }
 
 export function setState(updater: (state: ClientState) => ClientState) {
-  currentState = updater(currentState);
+  const next = updater(currentState);
+  const prefsChanged =
+    next.theme !== currentState.theme ||
+    next.language !== currentState.language ||
+    next.sidebarCollapsed !== currentState.sidebarCollapsed;
+  currentState = next;
+  if (prefsChanged) persistSettings(currentState);
   emit();
+}
+
+export function setTheme(theme: ThemeMode) {
+  setState((state) => ({ ...state, theme }));
+}
+
+export function setLanguage(language: AppLanguage) {
+  setState((state) => ({ ...state, language }));
+}
+
+export function toggleSidebarCollapsed() {
+  setState((state) => ({ ...state, sidebarCollapsed: !state.sidebarCollapsed }));
+}
+
+export function setProfileModalOpen(open: boolean) {
+  setState((state) => ({ ...state, profileModalOpen: open }));
 }
 
 export function subscribe(listener: Listener): () => void {

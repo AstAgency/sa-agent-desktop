@@ -25,6 +25,8 @@ type Bridge = {
     list: (scope: WorkspaceScope, path?: string) => Promise<FileEntry[]>;
     openFolder: (scope: WorkspaceScope) => Promise<{ path: string }>;
     scopeRoot: (scope: WorkspaceScope) => Promise<string>;
+    openWorkspaceRoot: (kind: "global" | "projects") => Promise<{ path: string }>;
+    openProjectRoot: (projectId: string) => Promise<{ path: string }>;
   };
 };
 

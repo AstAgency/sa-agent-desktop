@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from "electron";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApplicationMenuTemplate } from "./application-menu.js";
@@ -243,6 +244,28 @@ app.whenReady().then(async () => {
     ipcResult(async () => {
       const scope = parseScope(scopePayload);
       return resolveScopeRoot(scope);
+    }),
+  );
+
+  ipcMain.handle("sa-agent:fs-open-workspace-root", (_event, kindPayload: unknown) =>
+    ipcResult(async () => {
+      const kind = kindPayload === "projects" ? "projects" : "global";
+      const root = path.join(app.getPath("userData"), kind);
+      await fs.mkdir(root, { recursive: true });
+      const error = await shell.openPath(root);
+      if (error) throw new Error(error);
+      return { path: root };
+    }),
+  );
+
+  ipcMain.handle("sa-agent:fs-open-project-root", (_event, projectIdPayload: unknown) =>
+    ipcResult(async () => {
+      if (typeof projectIdPayload !== "string") throw new Error("projectId must be a string");
+      const scope = parseScope({ kind: "project", projectId: projectIdPayload });
+      const root = await ensureScopeRoot(scope);
+      const error = await shell.openPath(root);
+      if (error) throw new Error(error);
+      return { path: root };
     }),
   );
 

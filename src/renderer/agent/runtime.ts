@@ -210,6 +210,7 @@ export class SessionRuntime {
       if (message.role === "assistant") {
         const text = extractAssistantText(message);
         const toolCalls = extractAssistantToolCalls(message);
+        if (text.trim().length === 0 && toolCalls.length === 0) return;
         const saved = await appendMessage(this.input.sessionId, "assistant", text, {
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
         });
@@ -218,6 +219,7 @@ export class SessionRuntime {
       }
       if (message.role === "toolResult") {
         const text = extractToolResultText(message);
+        if (text.trim().length === 0) return;
         const saved = await appendMessage(this.input.sessionId, "tool", text, {
           tool_call_id: message.toolCallId,
         });
