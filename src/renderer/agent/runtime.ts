@@ -88,6 +88,7 @@ export class SessionRuntime {
   private streamingAssistantText = "";
   private readonly persistedMessageIds = new Set<string>();
   private readonly agentEventUnsubscribe: () => void;
+  private persistenceChain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
@@ -202,7 +203,15 @@ export class SessionRuntime {
     const message = event.message as PiMessage | undefined;
     if (!message) return;
     if (message.role === "user") return;
-    void this.persistAgentMessage(message);
+    this.enqueuePersistence(() => this.persistAgentMessage(message));
+  }
+
+  private enqueuePersistence(work: () => Promise<void>) {
+    this.persistenceChain = this.persistenceChain
+      .then(work)
+      .catch((error) => {
+        console.error("[runtime persist]", error);
+      });
   }
 
   private async persistAgentMessage(message: PiMessage) {
@@ -268,6 +277,11 @@ export class SessionRuntime {
     this.streamingAssistantText = "";
 
     try {
+      // Ensure prior tool/assistant persistence has settled before reading
+      // state.messages — otherwise the next round trip can omit (or reorder)
+      // a tool result that just executed.
+      await this.persistenceChain;
+
       const relevantSummaries =
         this.currentTurnUserText.length > 0
           ? await retrieveRelevantSummaries(this.currentTurnUserText, {
@@ -495,30 +509,59 @@ function hydrateAgentMessages(messages: Message[]): PiMessage[] {
   return result;
 }
 
+/**
+ * Convert the persisted transcript to the shape we send to /v1/chat/completions.
+ *
+ * Contract (deliberately different from OpenAI's strict tool-calls protocol):
+ *   - user / assistant messages flow through as plain text
+ *   - assistant messages with empty content are skipped (their tool_calls
+ *     are recorded locally but not exposed to the LLM)
+ *   - tool_calls metadata is stripped from outgoing assistant messages
+ *   - tool result messages are folded into synthetic user messages of the form
+ *
+ *       <tool_result name="...">{content}</tool_result>
+ *
+ *     This sidesteps OpenAI's "tool must follow tool_calls" pairing rule and
+ *     drives the LLM to interpret the tool output for the user in its next turn.
+ */
 function transcriptToChatMessages(messages: Message[]): ChatMessage[] {
+  const toolNameById = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role !== "assistant" || !message.tool_calls) continue;
+    for (const call of message.tool_calls) {
+      if (call?.id && call.function?.name) {
+        toolNameById.set(call.id, call.function.name);
+      }
+    }
+  }
+
   const result: ChatMessage[] = [];
   for (const message of messages) {
     if (message.role === "user") {
+      if (message.content.length === 0) continue;
       result.push({ role: "user", content: message.content });
       continue;
     }
     if (message.role === "assistant") {
-      result.push({
-        role: "assistant",
-        content: message.content.length > 0 ? message.content : null,
-        tool_calls: message.tool_calls ?? undefined,
-      });
+      if (message.content.trim().length === 0) continue;
+      result.push({ role: "assistant", content: message.content });
       continue;
     }
     if (message.role === "tool") {
+      if (message.content.trim().length === 0) continue;
+      const toolName =
+        (message.tool_call_id ? toolNameById.get(message.tool_call_id) : undefined) ?? "tool";
       result.push({
-        role: "tool",
-        content: message.content,
-        tool_call_id: message.tool_call_id ?? "",
+        role: "user",
+        content: `<tool_result name="${escapeAttribute(toolName)}">\n${message.content}\n</tool_result>`,
       });
     }
   }
   return result;
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 function toolsToOpenAIDefinitions(tools: AgentTool[]): OpenAIToolDefinition[] {
