@@ -45,8 +45,27 @@ function createWindow() {
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[renderer] did-fail-load: ${errorCode} ${errorDescription} url=${validatedURL}`);
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[renderer] render-process-gone:", details);
+  });
+  window.webContents.on("preload-error", (_event, preloadPathArg, error) => {
+    console.error(`[renderer] preload-error at ${preloadPathArg}:`, error);
+  });
+  window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    const prefix = level >= 2 ? "console.error" : level === 1 ? "console.warn" : "console";
+    console.log(`[renderer ${prefix}] ${sourceId}:${line} ${message}`);
+  });
+
   if (devServerUrl) {
-    void window.loadURL(devServerUrl);
+    console.log(`[renderer] loading dev URL ${devServerUrl}`);
+    window.webContents.openDevTools({ mode: "detach" });
+    void window.loadURL(devServerUrl).catch((error) => {
+      console.error("[renderer] loadURL failed:", error);
+    });
   } else {
     void window.loadFile(path.join(rendererDistPath, "index.html"));
   }
