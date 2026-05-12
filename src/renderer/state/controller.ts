@@ -1,5 +1,4 @@
 import {
-  appendMessage,
   createProject,
   createSession,
   getAgents,
@@ -16,11 +15,12 @@ import {
 import { getBridge } from "../lib/bridge";
 import type { Message, Session, Summary } from "../lib/types";
 import { SessionRuntime, type SessionRuntimeState } from "../agent/runtime";
-import { getState, setState, type ActiveSelection, type ClientState } from "./store";
+import { getState, setState, type ClientState } from "./store";
 
 const DISPLAY_NAME_MAX = 30;
 
 const runtimeBySession = new Map<string, SessionRuntime>();
+const runtimeUnsubscribes = new Map<string, () => void>();
 
 export async function startPythonRuntime() {
   setState((state) => ({
@@ -197,7 +197,6 @@ export async function sendMessage(content: string): Promise<void> {
   try {
     const selection = state.selection;
     let session: Session;
-    let isNewSession = false;
     if (selection.kind === "session") {
       const existing = findSession(state, selection.sessionId);
       if (!existing) throw new Error("Session not found");
@@ -207,7 +206,6 @@ export async function sendMessage(content: string): Promise<void> {
         display_name: deriveDisplayName(content),
         project_id: null,
       });
-      isNewSession = true;
       setState((s) => ({
         ...s,
         globalSessions: [session, ...s.globalSessions],
@@ -220,7 +218,6 @@ export async function sendMessage(content: string): Promise<void> {
         display_name: deriveDisplayName(content),
         project_id: selection.projectId,
       });
-      isNewSession = true;
       const projectId = selection.projectId;
       setState((s) => ({
         ...s,
@@ -237,9 +234,6 @@ export async function sendMessage(content: string): Promise<void> {
     }
 
     const runtime = await acquireRuntime(session);
-    if (isNewSession) {
-      // ensure the runtime sees the empty initial transcript
-    }
     await runtime.sendUserMessage(content);
   } finally {
     setState((s) => ({ ...s, sendingMessage: false, streamingAssistantText: "" }));
@@ -294,7 +288,7 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
   const unsubscribe = runtime.subscribe((runtimeState) => {
     onRuntimeStateChanged(session.id, runtimeState);
   });
-  (runtime as unknown as { __unsubscribe?: () => void }).__unsubscribe = unsubscribe;
+  runtimeUnsubscribes.set(session.id, unsubscribe);
   runtimeBySession.set(session.id, runtime);
   return runtime;
 }
@@ -323,17 +317,16 @@ export function deriveDisplayName(content: string): string {
 export function disposeRuntimes() {
   for (const runtime of runtimeBySession.values()) {
     runtime.abort();
-    const unsubscribe = (runtime as unknown as { __unsubscribe?: () => void }).__unsubscribe;
-    unsubscribe?.();
+  }
+  for (const unsubscribe of runtimeUnsubscribes.values()) {
+    unsubscribe();
   }
   runtimeBySession.clear();
+  runtimeUnsubscribes.clear();
 }
 
-// re-export for callers that want to listen to runtime turns externally
 export function getRuntime(sessionId: string): SessionRuntime | null {
   return runtimeBySession.get(sessionId) ?? null;
 }
 
-// Silence unused imports for messages helpers that may be needed later.
-void appendMessage;
 export type { Message, Summary };
