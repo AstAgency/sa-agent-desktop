@@ -25,7 +25,7 @@ type RunPythonResult = {
 
 type PythonRuntimeStatus = {
   ready: boolean;
-  modelId: string | null;
+  model_id: string | null;
   dimensions: number | null;
   error: string | null;
 };
@@ -40,11 +40,6 @@ async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
 }
 
 contextBridge.exposeInMainWorld("saAgent", {
-  devtools: {
-    open() {
-      return ipcRenderer.invoke("sa-agent:open-devtools");
-    },
-  },
   python: {
     status(): Promise<PythonRuntimeStatus> {
       return ipcRenderer.invoke("sa-agent:python-status") as Promise<PythonRuntimeStatus>;

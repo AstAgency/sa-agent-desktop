@@ -28,7 +28,7 @@ export type PythonRuntimePaths = {
 
 export type PythonRuntimeStatus = {
   ready: boolean;
-  modelId: string | null;
+  model_id: string | null;
   dimensions: number | null;
   error: string | null;
 };
@@ -41,7 +41,7 @@ export class PythonRuntime {
   private readonly pending = new Map<string, PendingRequest>();
   private status: PythonRuntimeStatus = {
     ready: false,
-    modelId: null,
+    model_id: null,
     dimensions: null,
     error: null,
   };
@@ -66,12 +66,12 @@ export class PythonRuntime {
   private async _start(): Promise<void> {
     if (!existsSync(this.paths.interpreter)) {
       const error = new Error(`Python interpreter not found at ${this.paths.interpreter}`);
-      this.status = { ready: false, modelId: null, dimensions: null, error: error.message };
+      this.status = { ready: false, model_id: null, dimensions: null, error: error.message };
       throw error;
     }
     if (!existsSync(this.paths.serverScript)) {
       const error = new Error(`Python sidecar script not found at ${this.paths.serverScript}`);
-      this.status = { ready: false, modelId: null, dimensions: null, error: error.message };
+      this.status = { ready: false, model_id: null, dimensions: null, error: error.message };
       throw error;
     }
 
@@ -102,7 +102,7 @@ export class PythonRuntime {
         if (!parsed) return;
         if (parsed.event === "ready") {
           clearTimeout(timeout);
-          this.status = { ready: true, modelId: null, dimensions: null, error: null };
+          this.status = { ready: true, model_id: null, dimensions: null, error: null };
           resolveReady();
           return;
         }
@@ -128,7 +128,7 @@ export class PythonRuntime {
         clearTimeout(timeout);
         this.status = {
           ready: false,
-          modelId: null,
+          model_id: null,
           dimensions: null,
           error: error.message,
         };
@@ -143,7 +143,7 @@ export class PythonRuntime {
     await readyPromise;
 
     const info = (await this.call("model_info", {})) as { model_id: string; dimensions: number };
-    this.status = { ready: true, modelId: info.model_id, dimensions: info.dimensions, error: null };
+    this.status = { ready: true, model_id: info.model_id, dimensions: info.dimensions, error: null };
   }
 
   async call(command: string, params: Record<string, unknown>): Promise<unknown> {

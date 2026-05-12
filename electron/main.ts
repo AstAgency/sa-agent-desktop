@@ -112,13 +112,6 @@ app.whenReady().then(async () => {
   configureApplicationBranding();
   installApplicationMenu();
 
-  ipcMain.handle("sa-agent:open-devtools", () => {
-    const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    if (!target) return { ok: false, error: "No window" };
-    target.webContents.openDevTools({ mode: "right", activate: true });
-    return { ok: true };
-  });
-
   ipcMain.handle("sa-agent:python-status", () => pythonRuntime.getStatus());
 
   ipcMain.handle("sa-agent:python-start", () =>

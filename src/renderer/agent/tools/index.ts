@@ -8,10 +8,6 @@ type ToolDefinition = AgentTool;
 const DEFAULT_PYTHON_TIMEOUT_MS = 60_000;
 const MAX_LIST_ENTRIES = 200;
 
-function joinContent(items: Array<{ type: "text"; text: string }>) {
-  return { content: items, details: null as Record<string, unknown> | null };
-}
-
 function textResult(text: string, details?: Record<string, unknown>) {
   return {
     content: [{ type: "text" as const, text }],
@@ -165,6 +161,3 @@ function pickString(args: unknown, key: string): string {
   }
   throw new Error(`Missing required string argument: ${key}`);
 }
-
-// suppress unused import warning when joinContent is removed later
-void joinContent;

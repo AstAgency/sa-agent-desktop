@@ -7,6 +7,7 @@ import {
   startNewGlobalSession,
   startNewProjectSession,
 } from "../state/controller";
+import { getCurrentBackendUrl } from "../lib/api";
 import { useClientState } from "../state/store";
 
 export function Sidebar() {
@@ -105,7 +106,7 @@ export function Sidebar() {
 
       <div className="sidebar-footer">
         <button onClick={clearSelection}>Close active</button>
-        <span>backend: {(import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL ?? "127.0.0.1:3000"}</span>
+        <span>backend: {getCurrentBackendUrl()}</span>
       </div>
 
       {showProjectModal ? (

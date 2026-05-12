@@ -1,7 +1,6 @@
 import type { FileEntry, PythonRuntimeStatus, RunPythonResult, WorkspaceScope } from "./types";
 
 type Bridge = {
-  devtools: { open: () => Promise<unknown> };
   python: {
     status: () => Promise<PythonRuntimeStatus>;
     start: () => Promise<PythonRuntimeStatus>;
