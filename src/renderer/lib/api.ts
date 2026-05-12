@@ -141,6 +141,18 @@ export function updateProjectMemory(
   );
 }
 
+export function updateProject(
+  projectId: string,
+  input: { name?: string; description?: string | null },
+  options?: RequestOptions,
+): Promise<Project> {
+  return request("PUT", `/v1/projects/${projectId}`, input, options);
+}
+
+export function deleteProject(projectId: string, options?: RequestOptions): Promise<void> {
+  return request("DELETE", `/v1/projects/${projectId}`, undefined, options);
+}
+
 // ============================================================================
 // Sessions
 // ============================================================================
@@ -173,6 +185,18 @@ export function createSession(
   options?: RequestOptions,
 ): Promise<Session> {
   return request("POST", "/v1/sessions", input, options);
+}
+
+export function updateSession(
+  sessionId: string,
+  input: { display_name?: string },
+  options?: RequestOptions,
+): Promise<Session> {
+  return request("PUT", `/v1/sessions/${sessionId}`, input, options);
+}
+
+export function deleteSession(sessionId: string, options?: RequestOptions): Promise<void> {
+  return request("DELETE", `/v1/sessions/${sessionId}`, undefined, options);
 }
 
 export function getSessionMessagesPage(

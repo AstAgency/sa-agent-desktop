@@ -1,6 +1,8 @@
 import {
   createProject,
   createSession,
+  deleteProject as deleteProjectRequest,
+  deleteSession as deleteSessionRequest,
   getAgents,
   getAllSessionMessages,
   getEmbeddingModelInfo,
@@ -10,7 +12,9 @@ import {
   getProjects,
   getSessionSummaries,
   updateGlobalMemory,
+  updateProject as updateProjectRequest,
   updateProjectMemory,
+  updateSession as updateSessionRequest,
 } from "../lib/api";
 import { getBridge } from "../lib/bridge";
 import type { Message, Session, Summary } from "../lib/types";
@@ -158,6 +162,110 @@ async function createProjectFromInput(input: { name: string; description?: strin
 export async function saveGlobalMemory(content: string) {
   const profile = await updateGlobalMemory(content);
   setState((state) => ({ ...state, profile }));
+}
+
+export async function renameProject(projectId: string, name: string) {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return;
+  const project = await updateProjectRequest(projectId, { name: trimmed });
+  setState((state) => ({
+    ...state,
+    projects: state.projects.map((existing) => (existing.id === projectId ? project : existing)),
+  }));
+}
+
+export async function removeProject(projectId: string) {
+  await deleteProjectRequest(projectId);
+  const stateBefore = getState();
+  const affectedSessionIds = (stateBefore.projectSessions[projectId] ?? []).map(
+    (session) => session.id,
+  );
+  setState((state) => {
+    const nextProjects = state.projects.filter((existing) => existing.id !== projectId);
+    const { [projectId]: _removed, ...nextProjectSessions } = state.projectSessions;
+    const selection = state.selection;
+    const selectionTouchesProject =
+      (selection.kind === "new-project" && selection.projectId === projectId) ||
+      (selection.kind === "session" && affectedSessionIds.includes(selection.sessionId));
+    const messagesBySession = { ...state.messagesBySession };
+    const summariesBySession = { ...state.summariesBySession };
+    for (const sessionId of affectedSessionIds) {
+      delete messagesBySession[sessionId];
+      delete summariesBySession[sessionId];
+    }
+    return {
+      ...state,
+      projects: nextProjects,
+      projectSessions: nextProjectSessions,
+      messagesBySession,
+      summariesBySession,
+      selection: selectionTouchesProject ? { kind: "none" } : state.selection,
+      streamingAssistantText: selectionTouchesProject ? "" : state.streamingAssistantText,
+    };
+  });
+  for (const sessionId of affectedSessionIds) {
+    const instance = runtimeBySession.get(sessionId);
+    if (!instance) continue;
+    instance.dispose();
+    runtimeBySession.delete(sessionId);
+    const unsub = runtimeUnsubscribes.get(sessionId);
+    unsub?.();
+    runtimeUnsubscribes.delete(sessionId);
+  }
+}
+
+export async function renameSession(sessionId: string, displayName: string) {
+  const trimmed = displayName.trim();
+  if (trimmed.length === 0) return;
+  const session = await updateSessionRequest(sessionId, { display_name: trimmed });
+  setState((state) => {
+    const inGlobals = state.globalSessions.some((existing) => existing.id === sessionId);
+    const nextGlobalSessions = inGlobals
+      ? state.globalSessions.map((existing) => (existing.id === sessionId ? session : existing))
+      : state.globalSessions;
+    const nextProjectSessions: Record<string, typeof state.globalSessions> = {};
+    for (const [projectId, sessions] of Object.entries(state.projectSessions)) {
+      nextProjectSessions[projectId] = sessions.map((existing) =>
+        existing.id === sessionId ? session : existing,
+      );
+    }
+    return {
+      ...state,
+      globalSessions: nextGlobalSessions,
+      projectSessions: nextProjectSessions,
+    };
+  });
+}
+
+export async function removeSession(sessionId: string) {
+  await deleteSessionRequest(sessionId);
+  setState((state) => {
+    const nextGlobalSessions = state.globalSessions.filter((existing) => existing.id !== sessionId);
+    const nextProjectSessions: Record<string, typeof state.globalSessions> = {};
+    for (const [projectId, sessions] of Object.entries(state.projectSessions)) {
+      nextProjectSessions[projectId] = sessions.filter((existing) => existing.id !== sessionId);
+    }
+    const isSelected = state.selection.kind === "session" && state.selection.sessionId === sessionId;
+    const { [sessionId]: _droppedMessages, ...messagesBySession } = state.messagesBySession;
+    const { [sessionId]: _droppedSummaries, ...summariesBySession } = state.summariesBySession;
+    return {
+      ...state,
+      globalSessions: nextGlobalSessions,
+      projectSessions: nextProjectSessions,
+      messagesBySession,
+      summariesBySession,
+      selection: isSelected ? { kind: "none" } : state.selection,
+      streamingAssistantText: isSelected ? "" : state.streamingAssistantText,
+    };
+  });
+  const runtime = runtimeBySession.get(sessionId);
+  if (runtime) {
+    runtime.dispose();
+    runtimeBySession.delete(sessionId);
+    const unsub = runtimeUnsubscribes.get(sessionId);
+    unsub?.();
+    runtimeUnsubscribes.delete(sessionId);
+  }
 }
 
 export async function saveProjectMemory(projectId: string, content: string) {

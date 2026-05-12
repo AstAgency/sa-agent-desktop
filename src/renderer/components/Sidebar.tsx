@@ -1,18 +1,38 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createProjectAndSelect,
   loadProjectSessions,
+  removeProject,
+  removeSession,
+  renameProject,
+  renameSession,
   selectSession,
   startNewGlobalSession,
   startNewProjectSession,
 } from "../state/controller";
-import { translate } from "../lib/i18n";
+import { translate, type AppLanguage } from "../lib/i18n";
 import {
   setProfileModalOpen,
   toggleSidebarCollapsed,
   useClientState,
 } from "../state/store";
 import { openProjectFolder, openGlobalRoot } from "../lib/workspace-folders";
+import {
+  IconChat,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDotsVertical,
+  IconFolder,
+  IconGlobe,
+  IconPencil,
+  IconTrash,
+} from "./icons";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
+
+type DeletePending =
+  | { kind: "project"; id: string; name: string }
+  | { kind: "session"; id: string; name: string };
 
 export function Sidebar() {
   const profile = useClientState((state) => state.profile);
@@ -23,6 +43,7 @@ export function Sidebar() {
   const collapsed = useClientState((state) => state.sidebarCollapsed);
   const language = useClientState((state) => state.language);
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DeletePending | null>(null);
 
   const activeProjectId =
     selection.kind === "new-project"
@@ -75,33 +96,26 @@ export function Sidebar() {
             <div className="sidebar-section">
               <div className="sidebar-section-title">
                 <span>{translate(language, "sidebar.globalSessions")}</span>
-                <button onClick={startNewGlobalSession}>{translate(language, "sidebar.new")}</button>
+                <button onClick={startNewGlobalSession}>
+                  {translate(language, "sidebar.new")}
+                </button>
               </div>
               <ul className="sidebar-list">
                 {globalSessions.length === 0 ? (
                   <li className="empty">{translate(language, "sidebar.noSessions")}</li>
                 ) : null}
                 {globalSessions.map((session) => (
-                  <li key={session.id}>
-                    <button
-                      className={
-                        selection.kind === "session" && selection.sessionId === session.id
-                          ? "active"
-                          : ""
-                      }
-                      onClick={() => selectSession(session.id)}
-                    >
-                      <span
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {session.display_name}
-                      </span>
-                    </button>
-                  </li>
+                  <SessionRow
+                    key={session.id}
+                    sessionId={session.id}
+                    displayName={session.display_name}
+                    active={selection.kind === "session" && selection.sessionId === session.id}
+                    language={language}
+                    onSelect={() => selectSession(session.id)}
+                    onDelete={() =>
+                      setPendingDelete({ kind: "session", id: session.id, name: session.display_name })
+                    }
+                  />
                 ))}
               </ul>
             </div>
@@ -119,59 +133,27 @@ export function Sidebar() {
               {projects.map((project) => {
                 const sessions = projectSessions[project.id] ?? [];
                 return (
-                  <details
+                  <ProjectGroup
                     key={project.id}
-                    onToggle={(event) => {
-                      if (
-                        (event.target as HTMLDetailsElement).open &&
-                        !projectSessions[project.id]
-                      ) {
+                    projectId={project.id}
+                    name={project.name}
+                    sessions={sessions}
+                    selection={selection}
+                    language={language}
+                    onLoadSessions={() => {
+                      if (!projectSessions[project.id]) {
                         void loadProjectSessions(project.id);
                       }
                     }}
-                  >
-                    <summary>
-                      <span>{project.name}</span>
-                      <button
-                        className="inline-link"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          startNewProjectSession(project.id);
-                        }}
-                      >
-                        {translate(language, "sidebar.newChat")}
-                      </button>
-                    </summary>
-                    <ul className="sidebar-list project-children">
-                      {sessions.length === 0 ? (
-                        <li className="empty">
-                          {translate(language, "sidebar.projectNoSessions")}
-                        </li>
-                      ) : null}
-                      {sessions.map((session) => (
-                        <li key={session.id}>
-                          <button
-                            className={
-                              selection.kind === "session" && selection.sessionId === session.id
-                                ? "active"
-                                : ""
-                            }
-                            onClick={() => selectSession(session.id)}
-                          >
-                            <span
-                              style={{
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {session.display_name}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                    onNewChat={() => startNewProjectSession(project.id)}
+                    onSelectSession={(sessionId) => selectSession(sessionId)}
+                    onDeleteProject={() =>
+                      setPendingDelete({ kind: "project", id: project.id, name: project.name })
+                    }
+                    onDeleteSession={(sessionId, sessionName) =>
+                      setPendingDelete({ kind: "session", id: sessionId, name: sessionName })
+                    }
+                  />
                 );
               })}
             </div>
@@ -187,7 +169,10 @@ export function Sidebar() {
             onClick={() => activeProjectId && void openProjectFolder(activeProjectId)}
             title={translate(language, "sidebar.openProjectFolder")}
             aria-label={translate(language, "sidebar.openProjectFolder")}
-            style={{ opacity: activeProjectId ? 1 : 0.5, cursor: activeProjectId ? "pointer" : "not-allowed" }}
+            style={{
+              opacity: activeProjectId ? 1 : 0.5,
+              cursor: activeProjectId ? "pointer" : "not-allowed",
+            }}
           >
             <IconFolder />
             <span className="label">{translate(language, "sidebar.openProjectFolder")}</span>
@@ -221,7 +206,264 @@ export function Sidebar() {
           onCreated={() => setShowProjectModal(false)}
         />
       ) : null}
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title={translate(
+            language,
+            pendingDelete.kind === "project"
+              ? "confirm.delete.project.title"
+              : "confirm.delete.session.title",
+          )}
+          body={translate(
+            language,
+            pendingDelete.kind === "project"
+              ? "confirm.delete.project.body"
+              : "confirm.delete.session.body",
+            { name: pendingDelete.name },
+          )}
+          destructive
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={async () => {
+            if (pendingDelete.kind === "project") {
+              await removeProject(pendingDelete.id);
+            } else {
+              await removeSession(pendingDelete.id);
+            }
+            setPendingDelete(null);
+          }}
+        />
+      ) : null}
     </aside>
+  );
+}
+
+function ProjectGroup(props: {
+  projectId: string;
+  name: string;
+  sessions: { id: string; display_name: string }[];
+  selection: { kind: string; sessionId?: string; projectId?: string };
+  language: AppLanguage;
+  onLoadSessions: () => void;
+  onNewChat: () => void;
+  onSelectSession: (sessionId: string) => void;
+  onDeleteProject: () => void;
+  onDeleteSession: (sessionId: string, name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const kebabRef = useRef<HTMLButtonElement | null>(null);
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      key: "rename",
+      label: translate(props.language, "menu.rename"),
+      icon: <IconPencil />,
+      onSelect: () => setEditing(true),
+    },
+    {
+      key: "delete",
+      label: translate(props.language, "menu.delete"),
+      icon: <IconTrash />,
+      destructive: true,
+      onSelect: () => props.onDeleteProject(),
+    },
+  ];
+
+  return (
+    <details
+      onToggle={(event) => {
+        if ((event.target as HTMLDetailsElement).open) props.onLoadSessions();
+      }}
+    >
+      <summary>
+        {editing ? (
+          <InlineRename
+            initialValue={props.name}
+            onCancel={() => setEditing(false)}
+            onSubmit={async (next) => {
+              setEditing(false);
+              if (next !== props.name) await renameProject(props.projectId, next);
+            }}
+          />
+        ) : (
+          <>
+            <span className="row-label">{props.name}</span>
+            <div className="row-actions">
+              <button
+                className="inline-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  props.onNewChat();
+                }}
+              >
+                {translate(props.language, "sidebar.newChat")}
+              </button>
+              <button
+                ref={kebabRef}
+                className={`row-kebab${menuOpen ? " active" : ""}`}
+                aria-label={translate(props.language, "menu.open")}
+                title={translate(props.language, "menu.open")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setMenuOpen((prev) => !prev);
+                }}
+              >
+                <IconDotsVertical />
+              </button>
+            </div>
+          </>
+        )}
+      </summary>
+      <ul className="sidebar-list project-children">
+        {props.sessions.length === 0 ? (
+          <li className="empty">{translate(props.language, "sidebar.projectNoSessions")}</li>
+        ) : null}
+        {props.sessions.map((session) => (
+          <SessionRow
+            key={session.id}
+            sessionId={session.id}
+            displayName={session.display_name}
+            active={
+              props.selection.kind === "session" &&
+              props.selection.sessionId === session.id
+            }
+            language={props.language}
+            onSelect={() => props.onSelectSession(session.id)}
+            onDelete={() => props.onDeleteSession(session.id, session.display_name)}
+          />
+        ))}
+      </ul>
+      {menuOpen ? (
+        <ContextMenu
+          anchorRef={kebabRef}
+          items={menuItems}
+          onClose={() => setMenuOpen(false)}
+        />
+      ) : null}
+    </details>
+  );
+}
+
+function SessionRow(props: {
+  sessionId: string;
+  displayName: string;
+  active: boolean;
+  language: AppLanguage;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const kebabRef = useRef<HTMLButtonElement | null>(null);
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      key: "rename",
+      label: translate(props.language, "menu.rename"),
+      icon: <IconPencil />,
+      onSelect: () => setEditing(true),
+    },
+    {
+      key: "delete",
+      label: translate(props.language, "menu.delete"),
+      icon: <IconTrash />,
+      destructive: true,
+      onSelect: () => props.onDelete(),
+    },
+  ];
+
+  if (editing) {
+    return (
+      <li>
+        <div className={`sidebar-row${props.active ? " active" : ""}`}>
+          <InlineRename
+            initialValue={props.displayName}
+            onCancel={() => setEditing(false)}
+            onSubmit={async (next) => {
+              setEditing(false);
+              if (next !== props.displayName) await renameSession(props.sessionId, next);
+            }}
+          />
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <div className={`sidebar-row${props.active ? " active" : ""}${menuOpen ? " menu-open" : ""}`}>
+        <button className="row-button" onClick={props.onSelect}>
+          <span className="row-label">{props.displayName}</span>
+        </button>
+        <button
+          ref={kebabRef}
+          className={`row-kebab${menuOpen ? " active" : ""}`}
+          aria-label={translate(props.language, "menu.open")}
+          title={translate(props.language, "menu.open")}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setMenuOpen((prev) => !prev);
+          }}
+        >
+          <IconDotsVertical />
+        </button>
+      </div>
+      {menuOpen ? (
+        <ContextMenu anchorRef={kebabRef} items={menuItems} onClose={() => setMenuOpen(false)} />
+      ) : null}
+    </li>
+  );
+}
+
+function InlineRename(props: {
+  initialValue: string;
+  onCancel: () => void;
+  onSubmit: (next: string) => void | Promise<void>;
+}) {
+  const [value, setValue] = useState(props.initialValue);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const submittedRef = useRef(false);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  function commit() {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      props.onCancel();
+      return;
+    }
+    void props.onSubmit(trimmed);
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="row-rename-input"
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          submittedRef.current = true;
+          props.onCancel();
+        }
+      }}
+      onBlur={commit}
+    />
   );
 }
 
@@ -258,15 +500,24 @@ function NewProjectModal(props: { onClose: () => void; onCreated: () => void }) 
         </label>
         <label>
           {translate(language, "project.modal.description")}
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
         </label>
         {error ? <div className="banner error">{error}</div> : null}
         <div className="actions">
           <button className="cancel" onClick={props.onClose}>
             {translate(language, "project.modal.cancel")}
           </button>
-          <button className="submit" disabled={busy || name.trim().length === 0} onClick={submit}>
-            {busy ? translate(language, "project.modal.creating") : translate(language, "project.modal.create")}
+          <button
+            className="submit"
+            disabled={busy || name.trim().length === 0}
+            onClick={submit}
+          >
+            {busy
+              ? translate(language, "project.modal.creating")
+              : translate(language, "project.modal.create")}
           </button>
         </div>
       </div>
@@ -290,46 +541,4 @@ function getInitials(name: string): string {
   const parts = cleaned.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function IconChevronLeft() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function IconChevronRight() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-
-function IconFolder() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}
-
-function IconGlobe() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" />
-    </svg>
-  );
-}
-
-function IconChat() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-    </svg>
-  );
 }

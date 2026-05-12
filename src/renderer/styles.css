@@ -247,46 +247,125 @@ textarea, input, select {
   gap: 2px;
 }
 
-.sidebar-list button {
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.sidebar-list button:hover { background: var(--bg-elevated-strong); }
-.sidebar-list button.active { background: var(--accent-soft); color: var(--accent); }
-
 .sidebar-list .empty {
   font-size: 12px;
   color: var(--text-muted);
   padding: 4px 10px;
 }
 
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 6px;
+  border-radius: 6px;
+  position: relative;
+  transition: background-color 100ms ease;
+}
+
+.sidebar-row:hover { background: var(--bg-elevated-strong); }
+.sidebar-row.active { background: var(--accent-soft); }
+.sidebar-row.active .row-label { color: var(--accent); }
+
+.sidebar-row .row-button {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 5px 6px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+}
+
+.row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.row-kebab {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+  opacity: 0;
+  transition: opacity 100ms ease, background-color 100ms ease, color 100ms ease;
+}
+
+.row-kebab svg { width: 14px; height: 14px; }
+
+.sidebar-row:hover .row-kebab,
+.sidebar-row.menu-open .row-kebab,
+.row-kebab.active,
+details > summary:hover .row-kebab {
+  opacity: 1;
+}
+
+.row-kebab:hover,
+.row-kebab.active {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.row-rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-app);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+
 .sidebar-projects details {
   padding: 4px 0;
+  position: relative;
 }
 .sidebar-projects details > summary {
   cursor: pointer;
   list-style: none;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  gap: 4px;
+  padding: 6px 6px 6px 10px;
   border-radius: 6px;
   font-size: 13px;
 }
 .sidebar-projects details > summary::-webkit-details-marker { display: none; }
 .sidebar-projects details[open] > summary { color: var(--text-primary); background: var(--bg-elevated-strong); }
 .sidebar-projects details > summary:hover { background: var(--bg-elevated-strong); }
+
+.sidebar-projects details > summary .row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-projects details > summary .row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
 
 .sidebar-projects .project-children {
   margin: 4px 0 6px 8px;
@@ -826,6 +905,54 @@ textarea, input, select {
 .modal .actions .cancel { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-strong); }
 .modal .actions .submit { background: var(--accent); color: white; border: none; }
 .modal .actions .submit[disabled] { opacity: 0.5; cursor: not-allowed; }
+.modal .actions .submit.destructive { background: var(--danger); }
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 100ms ease;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover { background: var(--bg-elevated-strong); }
+.context-menu-item .icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.context-menu-item .icon svg { width: 16px; height: 16px; }
+
+.context-menu-item.destructive { color: var(--danger); }
+.context-menu-item.destructive .icon { color: var(--danger); }
+.context-menu-item.destructive:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
 
 /* =====================================================================
    Profile modal

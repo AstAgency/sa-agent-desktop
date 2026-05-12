@@ -52,6 +52,18 @@ const dictionaries = {
     "project.modal.creating": "Creating…",
     "project.modal.cancel": "Cancel",
 
+    "menu.open": "More",
+    "menu.rename": "Rename",
+    "menu.delete": "Delete",
+
+    "confirm.delete.project.title": "Delete project?",
+    "confirm.delete.project.body": "Project \"{name}\" and all of its sessions will be permanently deleted.",
+    "confirm.delete.session.title": "Delete session?",
+    "confirm.delete.session.body": "Session \"{name}\" and its messages will be permanently deleted.",
+    "confirm.delete.confirm": "Delete",
+    "confirm.delete.cancel": "Cancel",
+    "confirm.delete.deleting": "Deleting…",
+
     "profile.title": "Account",
     "profile.unknown": "Unknown user",
     "profile.userId": "User ID",
@@ -117,6 +129,18 @@ const dictionaries = {
     "project.modal.create": "Создать",
     "project.modal.creating": "Создание…",
     "project.modal.cancel": "Отмена",
+
+    "menu.open": "Действия",
+    "menu.rename": "Переименовать",
+    "menu.delete": "Удалить",
+
+    "confirm.delete.project.title": "Удалить проект?",
+    "confirm.delete.project.body": "Проект «{name}» и все его сессии будут безвозвратно удалены.",
+    "confirm.delete.session.title": "Удалить сессию?",
+    "confirm.delete.session.body": "Сессия «{name}» и её сообщения будут безвозвратно удалены.",
+    "confirm.delete.confirm": "Удалить",
+    "confirm.delete.cancel": "Отмена",
+    "confirm.delete.deleting": "Удаление…",
 
     "profile.title": "Аккаунт",
     "profile.unknown": "Пользователь",
