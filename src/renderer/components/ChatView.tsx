@@ -3,6 +3,7 @@ import { abortActiveTurn, sendMessage, setSelectedAgent } from "../state/control
 import { selectActiveProject, selectActiveSession, useClientState } from "../state/store";
 import { translate, type AppLanguage } from "../lib/i18n";
 import type { Message } from "../lib/types";
+import { Markdown } from "./Markdown";
 
 const EMPTY_MESSAGES: Message[] = [];
 
@@ -108,7 +109,13 @@ function MessageView({ message, language }: { message: Message; language: AppLan
   return (
     <div className={`message-row ${message.role}`}>
       <span className="message-role">{roleLabel}</span>
-      <div className="message-bubble">{message.content}</div>
+      <div className="message-bubble">
+        {message.role === "assistant" ? (
+          <Markdown content={message.content} />
+        ) : (
+          message.content
+        )}
+      </div>
     </div>
   );
 }
@@ -117,7 +124,9 @@ function StreamingMessage({ text, language }: { text: string; language: AppLangu
   return (
     <div className="message-row assistant">
       <span className="message-role">{translate(language, "chat.role.assistant")}</span>
-      <div className="message-bubble">{text}</div>
+      <div className="message-bubble">
+        <Markdown content={text} />
+      </div>
     </div>
   );
 }
