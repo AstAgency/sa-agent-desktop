@@ -1,9 +1,11 @@
 {
   "name": "sa-agent-desktop",
+  "description": "Desktop client for SA-Agent.",
   "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
+  "author": "AstAgency",
   "scripts": {
     "python:build": "node ./scripts/build-python-runtime.mjs",
     "python:rebuild": "SA_AGENT_REBUILD_PYTHON=1 node ./scripts/build-python-runtime.mjs",
@@ -16,13 +18,13 @@
     "typecheck:renderer": "tsc --noEmit -p tsconfig.json",
     "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
-    "build": "rimraf dist-electron dist tsconfig.node.tsbuildinfo && npm run typecheck && tsc -p tsconfig.node.json && vite build"
+    "build": "rimraf dist-electron dist tsconfig.node.tsbuildinfo && npm run typecheck && tsc -p tsconfig.node.json && vite build",
+    "dist": "npm run build && electron-builder --config electron-builder.config.mjs --publish never"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.74.0",
     "@earendil-works/pi-ai": "^0.74.0",
     "@mozilla/readability": "^0.6.0",
-    "electron": "42.0.0",
     "jsdom": "^29.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -37,6 +39,8 @@
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0",
+    "electron": "42.0.0",
+    "electron-builder": "^26.0.12",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.0",
     "vite": "^7.0.0",
