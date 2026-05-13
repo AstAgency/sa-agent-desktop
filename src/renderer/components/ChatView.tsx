@@ -308,9 +308,11 @@ function Composer(props: {
             value={props.selectedAgentKey ?? ""}
             onChange={(event) => props.onSelectAgent(event.target.value || null)}
           >
-            <option value="">{translate(props.language, "chat.agent.default")}</option>
-            {props.agents.map((agent) => (
-              <option key={agent.agent_key} value={agent.agent_key}>
+            <option key="__default__" value="">
+              {translate(props.language, "chat.agent.default")}
+            </option>
+            {props.agents.map((agent, index) => (
+              <option key={agent.agent_key || `agent-${index}`} value={agent.agent_key}>
                 {agent.display_name}
               </option>
             ))}

@@ -4,10 +4,25 @@
 # user data directory at startup, then overrides server.secret_key,
 # server.bind_address, and server.port with values it picks at runtime.
 #
-# Keep this file lean — `use_default_settings: true` pulls SearXNG's
-# bundled defaults so we only need to record overrides.
+# Keep this file lean — `use_default_settings.engines.keep_only` pulls
+# SearXNG's bundled defaults but restricts engines to a curated list
+# that works without residential IPs / API keys.
+#
+# Excluded by design:
+#   - wikidata: SPARQL endpoint returns 403 to non-browser UAs (init fails)
+#   - brave/qwant: aggressively block datacenter IPs (429 / access denied)
+#   - google: requires consent cookies / blocks scraping
+#   - karmasearch and other small engines that throttle hard
 
-use_default_settings: true
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - bing
+      - wikipedia
+      - mojeek
+      - yahoo
+      - startpage
 
 general:
   debug: false
@@ -65,15 +80,19 @@ outgoing:
 engines:
   - name: duckduckgo
     disabled: false
+    timeout: 5.0
   - name: bing
     disabled: false
-  - name: brave
-    disabled: false
-  - name: qwant
-    disabled: false
+    timeout: 5.0
   - name: wikipedia
     disabled: false
+    timeout: 4.0
+  - name: mojeek
+    disabled: false
+    timeout: 6.0
+  - name: yahoo
+    disabled: false
+    timeout: 6.0
   - name: startpage
-    disabled: true
-  - name: google
-    disabled: true
+    disabled: false
+    timeout: 6.0
