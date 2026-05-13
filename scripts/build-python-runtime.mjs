@@ -8,8 +8,10 @@
 //   3) Create a venv at resources/python-runtime/<platform>/venv that uses
 //      the bundled interpreter.
 //   4) pip install python-sidecar/requirements.txt into that venv.
-//   5) pip install python-sidecar/searxng-requirements.txt into that venv
-//      (SearXNG metasearch bundled for the web_search tool).
+//   5) Shallow-clone SearXNG at a pinned commit, install its runtime
+//      deps, then install the working tree with --no-build-isolation.
+//      (SearXNG's setup.py touches msgspec at import time, so a plain
+//      `pip install git+...` fails build-isolation requirements.)
 //   6) Pre-download the intfloat/multilingual-e5-large model weights into
 //      resources/python-runtime/<platform>/hf-cache so first run is offline.
 //
@@ -30,6 +32,18 @@ const projectRoot = resolve(__dirname, "..");
 // python-build-standalone release pinned via env or default below.
 const PBS_TAG = process.env.SA_AGENT_PBS_TAG ?? "20240909";
 const PBS_PYTHON_VERSION = process.env.SA_AGENT_PYTHON_VERSION ?? "3.11.10";
+
+// SearXNG is fetched at build time from a pinned commit. The git URL and
+// commit can be overridden via env for development.
+//
+// We can't use `pip install git+https://...` directly because SearXNG's
+// setup.py imports `searx/__init__.py`, which imports `msgspec` before pip
+// has resolved build requirements. Instead we shallow-clone the repo,
+// install its runtime requirements first, then install the working tree
+// with --no-build-isolation.
+const SEARXNG_REPO = process.env.SA_AGENT_SEARXNG_REPO ?? "https://github.com/searxng/searxng.git";
+const SEARXNG_COMMIT =
+  process.env.SA_AGENT_SEARXNG_COMMIT ?? "df1f24fb7fdb07e86e8b0ca82acddab97f379433";
 
 const platformKey = resolvePlatformKey();
 const runtimeRoot = join(projectRoot, "resources", "python-runtime", platformKey);
@@ -80,12 +94,34 @@ execFileSync(
   { stdio: "inherit" },
 );
 
+console.log(`[python-runtime] cloning searxng@${SEARXNG_COMMIT.slice(0, 12)}`);
+const searxngSrc = join(runtimeRoot, "searxng-src");
+if (existsSync(searxngSrc)) rmSync(searxngSrc, { recursive: true, force: true });
+mkdirSync(searxngSrc, { recursive: true });
+execFileSync("git", ["init", "--quiet", searxngSrc], { stdio: "inherit" });
+execFileSync("git", ["-C", searxngSrc, "remote", "add", "origin", SEARXNG_REPO], { stdio: "inherit" });
+execFileSync(
+  "git",
+  ["-C", searxngSrc, "fetch", "--depth=1", "--quiet", "origin", SEARXNG_COMMIT],
+  { stdio: "inherit" },
+);
+execFileSync("git", ["-C", searxngSrc, "checkout", "--quiet", "FETCH_HEAD"], { stdio: "inherit" });
+
+console.log(`[python-runtime] installing searxng runtime deps`);
+execFileSync(
+  venvPython,
+  ["-m", "pip", "install", "-r", join(searxngSrc, "requirements.txt")],
+  { stdio: "inherit" },
+);
+
 console.log(`[python-runtime] installing searxng`);
 execFileSync(
   venvPython,
-  ["-m", "pip", "install", "-r", join(projectRoot, "python-sidecar", "searxng-requirements.txt")],
+  ["-m", "pip", "install", "--no-build-isolation", searxngSrc],
   { stdio: "inherit" },
 );
+
+rmSync(searxngSrc, { recursive: true, force: true });
 
 console.log(`[python-runtime] pre-downloading model weights`);
 mkdirSync(hfCacheRoot, { recursive: true });
