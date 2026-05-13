@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { AppLanguage } from "../lib/i18n";
+import type { RuntimeTraceEvent } from "../agent/runtime";
 import type {
   Agent,
   Billing,
@@ -46,7 +47,8 @@ export type ClientState = {
   summariesBySession: Record<string, Summary[]>;
   loadingSessionId: string | null;
   sendingMessage: boolean;
-  streamingAssistantText: string;
+  streamingFinalText: string;
+  runtimeTrace: RuntimeTraceEvent[];
   theme: ThemeMode;
   language: AppLanguage;
   sidebarCollapsed: boolean;
@@ -96,7 +98,8 @@ const initialState: ClientState = {
   summariesBySession: {},
   loadingSessionId: null,
   sendingMessage: false,
-  streamingAssistantText: "",
+  streamingFinalText: "",
+  runtimeTrace: [],
   theme: persisted.theme ?? "dark",
   language: persisted.language ?? detectDefaultLanguage(),
   sidebarCollapsed: persisted.sidebarCollapsed ?? false,

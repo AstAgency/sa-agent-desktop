@@ -21,6 +21,7 @@ import { maybeSummarize } from "./summarizer";
 import { buildWorkspaceTools, type WorkspaceToolActions } from "./tools";
 import type {
   Agent as AgentRecord,
+  AgentSkill,
   ChatMessage,
   Message,
   OpenAIToolCallRecord,
@@ -52,16 +53,45 @@ export type SessionRuntimeInput = {
   profile: Profile;
   project: Project | null;
   agent: AgentRecord | null;
+  agentSkills?: AgentSkill[];
   messages: Message[];
   summaries: Summary[];
   toolActions: WorkspaceToolActions;
   model?: string;
 };
 
+export type ToolCallStatus = "queued" | "running" | "success" | "error";
+
+export type RuntimeTraceEvent =
+  | {
+      kind: "reasoning";
+      id: string;
+      round: number;
+      text: string;
+      at: number;
+    }
+  | {
+      kind: "tool_call";
+      id: string;
+      round: number;
+      toolCallId: string;
+      name: string;
+      argsJson: string;
+      status: ToolCallStatus;
+      result?: string;
+      error?: string;
+      at: number;
+    };
+
 export type SessionRuntimeState = {
   messages: Message[];
   summaries: Summary[];
-  streamingAssistantText: string;
+  // Text streaming as the model's final answer. Populated only when the
+  // active round has produced text without tool_calls. Cleared on turn end.
+  streamingFinalText: string;
+  // In-memory trace of the in-flight turn (reasoning + tool events).
+  // Reset on every sendUserMessage. Not persisted.
+  trace: RuntimeTraceEvent[];
   isStreaming: boolean;
 };
 
@@ -77,6 +107,20 @@ export type RuntimeListener = (state: SessionRuntimeState) => void;
  * Persistence is driven by Agent lifecycle events: every assistant message and
  * every tool-result message is appended to the backend through `message_end`.
  */
+type ActiveRound = {
+  index: number;
+  textBuffer: string;
+  hasToolCalls: boolean;
+  reasoningEventId: string | null;
+  toolCallEventIds: Map<string, string>;
+};
+
+let traceEventCounter = 0;
+function nextTraceEventId(prefix: string): string {
+  traceEventCounter += 1;
+  return `${prefix}-${Date.now().toString(36)}-${traceEventCounter}`;
+}
+
 export class SessionRuntime {
   private readonly agent: Agent;
   private readonly tools: AgentTool[];
@@ -85,10 +129,11 @@ export class SessionRuntime {
   private model: string;
   private inflightAbort: AbortController | null = null;
   private currentTurnUserText = "";
-  private streamingAssistantText = "";
   private readonly persistedMessageIds = new Set<string>();
   private readonly agentEventUnsubscribe: () => void;
   private persistenceChain: Promise<unknown> = Promise.resolve();
+  private activeRound: ActiveRound | null = null;
+  private roundIndex = 0;
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
@@ -96,7 +141,8 @@ export class SessionRuntime {
     this.state = {
       messages: [...input.messages],
       summaries: [...input.summaries],
-      streamingAssistantText: "",
+      streamingFinalText: "",
+      trace: [],
       isStreaming: false,
     };
     for (const message of input.messages) this.persistedMessageIds.add(message.id);
@@ -144,13 +190,15 @@ export class SessionRuntime {
 
     const userMessage = await appendMessage(this.input.sessionId, "user", content);
     this.persistedMessageIds.add(userMessage.id);
+    this.roundIndex = 0;
+    this.activeRound = null;
     this.state = {
       ...this.state,
       messages: [...this.state.messages, userMessage],
-      streamingAssistantText: "",
+      streamingFinalText: "",
+      trace: [],
       isStreaming: true,
     };
-    this.streamingAssistantText = "";
     this.currentTurnUserText = content;
     this.notify();
 
@@ -168,12 +216,23 @@ export class SessionRuntime {
       // message lands in state.messages before we clear the streaming text —
       // otherwise the bubble briefly disappears and the UI looks broken.
       await this.persistenceChain;
-      this.state = { ...this.state, isStreaming: false, streamingAssistantText: "" };
-      this.streamingAssistantText = "";
+      this.activeRound = null;
+      this.state = { ...this.state, isStreaming: false, streamingFinalText: "" };
       this.notify();
     }
 
     await this.maybeRunSummarization();
+  }
+
+  /**
+   * Drop the in-memory trace for the active session. Intended to be called
+   * by the controller when the user navigates away — the trace is local UI
+   * state, not persisted.
+   */
+  clearTrace(): void {
+    if (this.state.trace.length === 0 && this.state.streamingFinalText.length === 0) return;
+    this.state = { ...this.state, trace: [], streamingFinalText: "" };
+    this.notify();
   }
 
   replaceSummaries(summaries: Summary[]) {
@@ -207,7 +266,69 @@ export class SessionRuntime {
     const message = event.message as PiMessage | undefined;
     if (!message) return;
     if (message.role === "user") return;
+    if (message.role === "toolResult") {
+      const isError = (message as { isError?: boolean }).isError === true;
+      const text = extractToolResultText(message);
+      this.updateToolCallStatus(
+        (message as { toolCallId?: string }).toolCallId ?? "",
+        isError ? "error" : "success",
+        text,
+        isError,
+      );
+    }
     this.enqueuePersistence(() => this.persistAgentMessage(message));
+  }
+
+  private updateToolCallStatus(
+    toolCallId: string,
+    status: ToolCallStatus,
+    text: string,
+    isError: boolean,
+  ) {
+    if (!toolCallId) return;
+    let mutated = false;
+    const trace = this.state.trace.map((event) => {
+      if (event.kind !== "tool_call" || event.toolCallId !== toolCallId) return event;
+      mutated = true;
+      return {
+        ...event,
+        status,
+        result: isError ? undefined : text,
+        error: isError ? text : undefined,
+      };
+    });
+    if (!mutated) return;
+    this.state = { ...this.state, trace };
+    this.notify();
+  }
+
+  private appendTraceEvent(event: RuntimeTraceEvent): void {
+    this.state = { ...this.state, trace: [...this.state.trace, event] };
+  }
+
+  private updateTraceEvent(id: string, patch: Partial<RuntimeTraceEvent>): void {
+    const trace = this.state.trace.map((event) =>
+      event.id === id ? ({ ...event, ...patch } as RuntimeTraceEvent) : event,
+    );
+    this.state = { ...this.state, trace };
+  }
+
+  private promoteToReasoning(round: ActiveRound): void {
+    if (round.reasoningEventId) return;
+    if (round.textBuffer.length === 0) {
+      round.hasToolCalls = true;
+      return;
+    }
+    const id = nextTraceEventId("reasoning");
+    round.reasoningEventId = id;
+    round.hasToolCalls = true;
+    this.appendTraceEvent({
+      kind: "reasoning",
+      id,
+      round: round.index,
+      text: round.textBuffer,
+      at: Date.now(),
+    });
   }
 
   private enqueuePersistence(work: () => Promise<void>) {
@@ -278,13 +399,21 @@ export class SessionRuntime {
 
     let textContentIndex: number | null = null;
     let textContent: TextContent | null = null;
-    this.streamingAssistantText = "";
 
-    // Clear any leftover streaming text from the previous round (e.g. after a
-    // toolUse turn). Otherwise the UI keeps showing the previous round's text
-    // until the first delta of the new round arrives, which looks like a
-    // duplicate of the previous assistant message.
-    this.state = { ...this.state, streamingAssistantText: "" };
+    this.roundIndex += 1;
+    const round: ActiveRound = {
+      index: this.roundIndex,
+      textBuffer: "",
+      hasToolCalls: false,
+      reasoningEventId: null,
+      toolCallEventIds: new Map(),
+    };
+    this.activeRound = round;
+
+    // Each new round resets the live final-answer bubble — until we see
+    // toolcall_start, we optimistically stream into it; if tool calls show
+    // up, we move the buffered text into the trace as reasoning.
+    this.state = { ...this.state, streamingFinalText: "" };
     this.notify();
 
     try {
@@ -304,6 +433,7 @@ export class SessionRuntime {
       const transcriptForLlm = transcriptToChatMessages(liveMessages);
       const promptMessages: ChatMessage[] = buildPrompt({
         agent: this.input.agent,
+        agentSkills: this.input.agentSkills ?? [],
         profile: this.input.profile,
         project: this.input.project,
         relevantSummaries,
@@ -329,8 +459,15 @@ export class SessionRuntime {
               stream.push({ type: "text_start", contentIndex: textContentIndex, partial });
             }
             textContent.text += delta;
-            this.streamingAssistantText += delta;
-            this.state = { ...this.state, streamingAssistantText: this.streamingAssistantText };
+            round.textBuffer += delta;
+            if (round.hasToolCalls && round.reasoningEventId) {
+              // We've already decided this round is reasoning. Append to the
+              // existing reasoning event so the trace UI updates live.
+              this.updateTraceEvent(round.reasoningEventId, { text: round.textBuffer });
+            } else {
+              // Optimistically stream into the final-answer bubble.
+              this.state = { ...this.state, streamingFinalText: round.textBuffer };
+            }
             this.notify();
             stream.push({
               type: "text_delta",
@@ -350,6 +487,27 @@ export class SessionRuntime {
             };
             partial.content.push(placeholder);
             stream.push({ type: "toolcall_start", contentIndex, partial });
+
+            // Mid-round we now know this is an intermediate "reasoning" turn,
+            // not the final answer. Move any text accumulated so far into a
+            // reasoning trace event and clear the live final-answer bubble.
+            if (!round.hasToolCalls) {
+              this.promoteToReasoning(round);
+              this.state = { ...this.state, streamingFinalText: "" };
+            }
+            const eventId = nextTraceEventId("tool");
+            round.toolCallEventIds.set(id, eventId);
+            this.appendTraceEvent({
+              kind: "tool_call",
+              id: eventId,
+              round: round.index,
+              toolCallId: id,
+              name,
+              argsJson: "",
+              status: "running",
+              at: Date.now(),
+            });
+            this.notify();
           },
           onToolCallDelta: (index, argumentsDelta) => {
             const contentIndex = toolCallContentIndices.get(index);
@@ -376,6 +534,13 @@ export class SessionRuntime {
       }
 
       if (result.tool_calls.length > 0) {
+        // If the round had no text at all but still ends with tool_calls,
+        // make sure the trace shows this round had reasoning (an empty one).
+        if (!round.hasToolCalls) {
+          this.promoteToReasoning(round);
+          this.state = { ...this.state, streamingFinalText: "" };
+          this.notify();
+        }
         for (const toolCall of result.tool_calls) {
           const index = result.tool_calls.indexOf(toolCall);
           const contentIndex = toolCallContentIndices.get(index);
@@ -388,6 +553,13 @@ export class SessionRuntime {
             arguments: parsedArgs,
           };
           partial.content[contentIndex] = finalized;
+          const traceEventId = round.toolCallEventIds.get(toolCall.id);
+          if (traceEventId) {
+            this.updateTraceEvent(traceEventId, {
+              argsJson: JSON.stringify(parsedArgs ?? {}, null, 2),
+            });
+            this.notify();
+          }
           stream.push({
             type: "toolcall_end",
             contentIndex,

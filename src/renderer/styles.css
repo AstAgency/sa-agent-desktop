@@ -894,6 +894,194 @@ details > summary:hover .row-kebab {
   color: var(--text-muted);
 }
 
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.runtime-block {
+  margin: 4px 0 4px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bubble-assistant-bg) 50%, transparent);
+}
+
+.runtime-block.live {
+  border-color: color-mix(in srgb, var(--accent, #4f8) 35%, var(--border));
+}
+
+.runtime-block-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.runtime-block-toggle:hover {
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+}
+
+.runtime-block-toggle .chevron {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid currentColor;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease-out;
+}
+
+.runtime-block-toggle .chevron.open {
+  transform: rotate(0deg);
+}
+
+.runtime-block-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.runtime-block-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.runtime-block-body {
+  padding: 4px 12px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.runtime-empty {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.runtime-event {
+  border-left: 2px solid var(--border);
+  padding: 4px 0 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runtime-event.reasoning {
+  border-left-color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+
+.runtime-event.tool.status-running {
+  border-left-color: color-mix(in srgb, #f5a623 80%, transparent);
+}
+
+.runtime-event.tool.status-success {
+  border-left-color: color-mix(in srgb, #2bb673 80%, transparent);
+}
+
+.runtime-event.tool.status-error {
+  border-left-color: color-mix(in srgb, var(--danger) 80%, transparent);
+}
+
+.runtime-event-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.runtime-event-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.runtime-event-name {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.status-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-badge.status-queued {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-secondary);
+}
+
+.status-badge.status-running {
+  background: color-mix(in srgb, #f5a623 18%, transparent);
+  color: #d18d10;
+}
+
+.status-badge.status-success {
+  background: color-mix(in srgb, #2bb673 18%, transparent);
+  color: #1d9e60;
+}
+
+.status-badge.status-error {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.runtime-event-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.runtime-args summary,
+.runtime-result summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.runtime-args pre,
+.runtime-result pre,
+.runtime-error pre {
+  margin: 4px 0 0 0;
+  padding: 8px 10px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.runtime-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .chat-composer {
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);

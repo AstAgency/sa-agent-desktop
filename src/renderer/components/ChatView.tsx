@@ -7,10 +7,72 @@ import {
   useClientState,
 } from "../state/store";
 import { THINKING_WORDS, translate, type AppLanguage } from "../lib/i18n";
-import type { Billing, Message } from "../lib/types";
+import type { Billing, Message, OpenAIToolCallRecord } from "../lib/types";
+import type { RuntimeTraceEvent } from "../agent/runtime";
 import { Markdown } from "./Markdown";
 
 const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_TRACE: RuntimeTraceEvent[] = [];
+
+/**
+ * One user → assistant cycle. Intermediate assistant turns (those with
+ * tool_calls) and tool result messages live inside `traceMessages` and are
+ * surfaced via the collapsible "Ход выполнения" block. Only `userMessage`
+ * and `finalAssistant` are shown in the main chat thread.
+ */
+type ChatTurn = {
+  key: string;
+  userMessage: Message | null;
+  traceMessages: Message[];
+  finalAssistant: Message | null;
+};
+
+function groupTurns(messages: Message[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  let current: ChatTurn | null = null;
+  const flush = () => {
+    if (current) turns.push(current);
+    current = null;
+  };
+  for (const message of messages) {
+    if (message.role === "system") continue;
+    if (message.role === "user") {
+      flush();
+      current = {
+        key: `turn-${message.id}`,
+        userMessage: message,
+        traceMessages: [],
+        finalAssistant: null,
+      };
+      continue;
+    }
+    if (!current) {
+      current = {
+        key: `turn-orphan-${message.id}`,
+        userMessage: null,
+        traceMessages: [],
+        finalAssistant: null,
+      };
+    }
+    if (message.role === "tool") {
+      current.traceMessages.push(message);
+      continue;
+    }
+    if (message.role === "assistant") {
+      const hasToolCalls = (message.tool_calls?.length ?? 0) > 0;
+      if (hasToolCalls) {
+        current.traceMessages.push(message);
+      } else {
+        if (current.finalAssistant !== null) {
+          current.traceMessages.push(current.finalAssistant);
+        }
+        current.finalAssistant = message;
+      }
+    }
+  }
+  flush();
+  return turns;
+}
 
 export function ChatView() {
   const selection = useClientState((state) => state.selection);
@@ -24,13 +86,14 @@ export function ChatView() {
       ? state.messagesBySession[state.selection.sessionId] ?? EMPTY_MESSAGES
       : EMPTY_MESSAGES,
   );
-  const streamingText = useClientState((state) => state.streamingAssistantText);
+  const streamingFinalText = useClientState((state) => state.streamingFinalText);
+  const runtimeTrace = useClientState((state) => state.runtimeTrace ?? EMPTY_TRACE);
   const sending = useClientState((state) => state.sendingMessage);
   const loadingSessionId = useClientState((state) => state.loadingSessionId);
   const billing = useClientState((state) => state.billing);
   const lastStreamError = useClientState((state) => state.lastStreamError);
 
-  const visibleMessages = useMemo(() => filterVisibleMessages(rawMessages), [rawMessages]);
+  const turns = useMemo(() => groupTurns(rawMessages), [rawMessages]);
 
   if (selection.kind === "none") {
     return (
@@ -70,10 +133,16 @@ export function ChatView() {
 
       <div className="chat-history">
         {isLoading ? <em>{translate(language, "chat.loadingHistory")}</em> : null}
-        {visibleMessages.map((message) => (
-          <MessageView key={message.id} message={message} language={language} />
+        {turns.map((turn) => (
+          <TurnView key={turn.key} turn={turn} language={language} />
         ))}
-        {sending ? <StreamingTrace text={streamingText} language={language} /> : null}
+        {sending ? (
+          <LiveTurn
+            trace={runtimeTrace}
+            streamingFinalText={streamingFinalText}
+            language={language}
+          />
+        ) : null}
         {showError ? (
           <StreamErrorBubble
             message={lastStreamError!.message}
@@ -82,7 +151,7 @@ export function ChatView() {
           />
         ) : null}
         {!isLoading &&
-        visibleMessages.length === 0 &&
+        turns.length === 0 &&
         !sending &&
         !showError ? (
           <p style={{ color: "var(--text-muted)" }}>
@@ -91,8 +160,9 @@ export function ChatView() {
           </p>
         ) : null}
         <BottomAnchor
-          messages={visibleMessages}
-          streamingText={streamingText}
+          turnsLength={turns.length}
+          streamingFinalText={streamingFinalText}
+          traceLength={runtimeTrace.length}
           sending={sending}
         />
       </div>
@@ -169,42 +239,223 @@ function StreamErrorBubble({
   );
 }
 
-function StreamingTrace({ text, language }: { text: string; language: AppLanguage }) {
-  const word = useThinkingWord(language);
-  const [expanded, setExpanded] = useState(false);
-  const hasText = text.length > 0;
+function TurnView({ turn, language }: { turn: ChatTurn; language: AppLanguage }) {
+  const trace = useMemo(() => buildHistoricalTrace(turn.traceMessages), [turn.traceMessages]);
   return (
-    <div className="message-row assistant stream-trace" aria-live="polite">
+    <div className="chat-turn">
+      {turn.userMessage ? <MessageView message={turn.userMessage} language={language} /> : null}
+      {trace.length > 0 ? (
+        <RuntimeBlock
+          trace={trace}
+          language={language}
+          live={false}
+          defaultExpanded={false}
+        />
+      ) : null}
+      {turn.finalAssistant ? (
+        <MessageView message={turn.finalAssistant} language={language} />
+      ) : null}
+    </div>
+  );
+}
+
+function LiveTurn({
+  trace,
+  streamingFinalText,
+  language,
+}: {
+  trace: RuntimeTraceEvent[];
+  streamingFinalText: string;
+  language: AppLanguage;
+}) {
+  return (
+    <div className="chat-turn live">
+      <RuntimeBlock trace={trace} language={language} live defaultExpanded={trace.length > 0} />
+      {streamingFinalText.length > 0 ? (
+        <div className="message-row assistant">
+          <span className="message-role">{translate(language, "chat.role.assistant")}</span>
+          <div className="message-bubble">
+            <Markdown content={streamingFinalText} />
+          </div>
+        </div>
+      ) : (
+        <LiveThinkingIndicator language={language} />
+      )}
+    </div>
+  );
+}
+
+function LiveThinkingIndicator({ language }: { language: AppLanguage }) {
+  const word = useThinkingWord(language);
+  return (
+    <div className="message-row assistant" aria-live="polite">
       <span className="message-role">{translate(language, "chat.role.thinking")}</span>
-      <div className="typing-bubble" aria-label={translate(language, "chat.role.thinking")}>
+      <div className="typing-bubble">
         <span className="thinking-word">{word}…</span>
         <span className="dot" />
         <span className="dot" />
         <span className="dot" />
-        <button
-          type="button"
-          className="stream-trace-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <span className={`chevron ${expanded ? "open" : ""}`} aria-hidden="true" />
-          {translate(language, expanded ? "chat.stream.hide" : "chat.stream.show")}
-        </button>
       </div>
+    </div>
+  );
+}
+
+function RuntimeBlock({
+  trace,
+  language,
+  live,
+  defaultExpanded,
+}: {
+  trace: RuntimeTraceEvent[];
+  language: AppLanguage;
+  live: boolean;
+  defaultExpanded: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return (
+    <div className={`runtime-block${live ? " live" : ""}`} aria-live={live ? "polite" : undefined}>
+      <button
+        type="button"
+        className="runtime-block-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className={`chevron ${expanded ? "open" : ""}`} aria-hidden="true" />
+        <span className="runtime-block-title">
+          {translate(language, "chat.runtime.title")}
+        </span>
+        <span className="runtime-block-count">{trace.length}</span>
+      </button>
       {expanded ? (
-        <div className="stream-trace-body" role="region">
-          {hasText ? (
-            <Markdown content={text} />
-          ) : (
-            <span className="stream-trace-empty">
-              {translate(language, "chat.stream.empty")}
+        <div className="runtime-block-body">
+          {trace.length === 0 ? (
+            <span className="runtime-empty">
+              {translate(language, "chat.runtime.empty")}
             </span>
+          ) : (
+            trace.map((event) => (
+              <RuntimeEvent key={event.id} event={event} language={language} />
+            ))
           )}
         </div>
       ) : null}
     </div>
   );
 }
+
+function RuntimeEvent({
+  event,
+  language,
+}: {
+  event: RuntimeTraceEvent;
+  language: AppLanguage;
+}) {
+  if (event.kind === "reasoning") {
+    return (
+      <div className="runtime-event reasoning">
+        <span className="runtime-event-label">
+          {translate(language, "chat.runtime.reasoning")}
+        </span>
+        <div className="runtime-event-body">
+          <Markdown content={event.text} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`runtime-event tool status-${event.status}`}>
+      <div className="runtime-event-header">
+        <span className="runtime-event-label">
+          {translate(language, "chat.runtime.tool")}
+        </span>
+        <code className="runtime-event-name">{event.name}</code>
+        <span className={`status-badge status-${event.status}`}>
+          {translate(language, `chat.runtime.status.${event.status}` as never)}
+        </span>
+      </div>
+      {event.argsJson.length > 0 ? (
+        <details className="runtime-args">
+          <summary>{translate(language, "chat.runtime.args")}</summary>
+          <pre>{event.argsJson}</pre>
+        </details>
+      ) : null}
+      {event.result !== undefined && event.result.length > 0 ? (
+        <details className="runtime-result">
+          <summary>{translate(language, "chat.runtime.result")}</summary>
+          <pre>{event.result}</pre>
+        </details>
+      ) : null}
+      {event.error !== undefined && event.error.length > 0 ? (
+        <div className="runtime-error">
+          <span className="runtime-event-label">
+            {translate(language, "chat.runtime.toolError")}
+          </span>
+          <pre>{event.error}</pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * For previously-completed turns we don't have the live trace anymore — it's
+ * not persisted. But we can reconstruct a useful approximation from the
+ * stored intermediate assistant messages + their tool_calls + tool results.
+ */
+function buildHistoricalTrace(traceMessages: Message[]): RuntimeTraceEvent[] {
+  const events: RuntimeTraceEvent[] = [];
+  const resultsByCallId = new Map<string, { text: string; isError: boolean }>();
+  for (const message of traceMessages) {
+    if (message.role !== "tool") continue;
+    const callId = message.tool_call_id ?? "";
+    if (!callId) continue;
+    resultsByCallId.set(callId, {
+      text: message.content,
+      isError: false,
+    });
+  }
+  let counter = 0;
+  for (const message of traceMessages) {
+    if (message.role !== "assistant") continue;
+    if (message.content.trim().length > 0) {
+      counter += 1;
+      events.push({
+        kind: "reasoning",
+        id: `hist-reasoning-${message.id}`,
+        round: counter,
+        text: message.content,
+        at: Date.parse(message.created_at) || 0,
+      });
+    }
+    const toolCalls: OpenAIToolCallRecord[] = message.tool_calls ?? [];
+    for (const toolCall of toolCalls) {
+      counter += 1;
+      const result = resultsByCallId.get(toolCall.id);
+      events.push({
+        kind: "tool_call",
+        id: `hist-tool-${toolCall.id}`,
+        round: counter,
+        toolCallId: toolCall.id,
+        name: toolCall.function?.name ?? "",
+        argsJson: prettifyJson(toolCall.function?.arguments ?? ""),
+        status: result ? (result.isError ? "error" : "success") : "success",
+        result: result ? result.text : undefined,
+        at: Date.parse(message.created_at) || 0,
+      });
+    }
+  }
+  return events;
+}
+
+function prettifyJson(value: string): string {
+  if (!value) return "";
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 
 function useThinkingWord(language: AppLanguage): string {
   const list = THINKING_WORDS[language] ?? THINKING_WORDS.en;
@@ -219,14 +470,6 @@ function useThinkingWord(language: AppLanguage): string {
     return () => window.clearInterval(id);
   }, [list.length]);
   return list[index] ?? list[0] ?? "";
-}
-
-function filterVisibleMessages(messages: Message[]): Message[] {
-  return messages.filter((message) => {
-    if (message.role === "tool" || message.role === "system") return false;
-    if (message.content.trim().length === 0) return false;
-    return true;
-  });
 }
 
 function MessageView({ message, language }: { message: Message; language: AppLanguage }) {
@@ -249,18 +492,20 @@ function MessageView({ message, language }: { message: Message; language: AppLan
 }
 
 function BottomAnchor({
-  messages,
-  streamingText,
+  turnsLength,
+  streamingFinalText,
+  traceLength,
   sending,
 }: {
-  messages: Message[];
-  streamingText: string;
+  turnsLength: number;
+  streamingFinalText: string;
+  traceLength: number;
   sending: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, streamingText, sending]);
+  }, [turnsLength, streamingFinalText, traceLength, sending]);
   return <div ref={ref} />;
 }
 

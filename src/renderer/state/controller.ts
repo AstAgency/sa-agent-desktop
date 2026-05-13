@@ -4,6 +4,7 @@ import {
   createSession,
   deleteProject as deleteProjectRequest,
   deleteSession as deleteSessionRequest,
+  getAgentSkills,
   getAgents,
   getAllSessionMessages,
   getBilling,
@@ -20,7 +21,7 @@ import {
 } from "../lib/api";
 import { getBridge } from "../lib/bridge";
 import { translate } from "../lib/i18n";
-import type { Message, Session, Summary, WorkspaceScope } from "../lib/types";
+import type { AgentSkill, Message, Session, Summary, WorkspaceScope } from "../lib/types";
 import { SessionRuntime, type SessionRuntimeState } from "../agent/runtime";
 import {
   getState,
@@ -35,6 +36,20 @@ const DISPLAY_NAME_MAX = 30;
 
 const runtimeBySession = new Map<string, SessionRuntime>();
 const runtimeUnsubscribes = new Map<string, () => void>();
+const agentSkillsCache = new Map<string, AgentSkill[]>();
+
+async function loadAgentSkills(agentId: string): Promise<AgentSkill[]> {
+  const cached = agentSkillsCache.get(agentId);
+  if (cached) return cached;
+  try {
+    const skills = await getAgentSkills(agentId);
+    agentSkillsCache.set(agentId, skills);
+    return skills;
+  } catch (error) {
+    console.warn("[controller] failed to load agent skills", error);
+    return [];
+  }
+}
 
 export async function startPythonRuntime() {
   setState((state) => ({
@@ -121,7 +136,8 @@ export function selectSession(sessionId: string) {
   setState((state) => ({
     ...state,
     selection: { kind: "session", sessionId },
-    streamingAssistantText: "",
+    streamingFinalText: "",
+    runtimeTrace: [],
   }));
   void hydrateSession(sessionId);
 }
@@ -130,7 +146,8 @@ export function startNewGlobalSession() {
   setState((state) => ({
     ...state,
     selection: { kind: "new-global" },
-    streamingAssistantText: "",
+    streamingFinalText: "",
+    runtimeTrace: [],
   }));
 }
 
@@ -138,12 +155,14 @@ export function startNewProjectSession(projectId: string) {
   setState((state) => ({
     ...state,
     selection: { kind: "new-project", projectId },
-    streamingAssistantText: "",
+    streamingFinalText: "",
+    runtimeTrace: [],
   }));
 }
 
 export function clearSelection() {
-  setState((state) => ({ ...state, selection: { kind: "none" }, streamingAssistantText: "" }));
+  setState((state) => ({ ...state, selection: { kind: "none" }, streamingFinalText: "",
+    runtimeTrace: [] }));
 }
 
 export function setSelectedAgent(agentKey: string | null) {
@@ -220,7 +239,8 @@ export async function removeProject(projectId: string) {
       messagesBySession,
       summariesBySession,
       selection: selectionTouchesProject ? { kind: "none" } : state.selection,
-      streamingAssistantText: selectionTouchesProject ? "" : state.streamingAssistantText,
+      streamingFinalText: selectionTouchesProject ? "" : state.streamingFinalText,
+      runtimeTrace: selectionTouchesProject ? [] : state.runtimeTrace,
     };
   });
   for (const sessionId of affectedSessionIds) {
@@ -275,7 +295,8 @@ export async function removeSession(sessionId: string) {
       messagesBySession,
       summariesBySession,
       selection: isSelected ? { kind: "none" } : state.selection,
-      streamingAssistantText: isSelected ? "" : state.streamingAssistantText,
+      streamingFinalText: isSelected ? "" : state.streamingFinalText,
+      runtimeTrace: isSelected ? [] : state.runtimeTrace,
     };
   });
   const runtime = runtimeBySession.get(sessionId);
@@ -330,7 +351,8 @@ export async function sendMessage(content: string): Promise<void> {
   if (!state.profile) throw new Error("Profile not loaded");
 
   setLastStreamError(null);
-  setState((s) => ({ ...s, sendingMessage: true, streamingAssistantText: "" }));
+  setState((s) => ({ ...s, sendingMessage: true, streamingFinalText: "",
+    runtimeTrace: [] }));
 
   try {
     const selection = state.selection;
@@ -379,7 +401,8 @@ export async function sendMessage(content: string): Promise<void> {
       throw error;
     }
   } finally {
-    setState((s) => ({ ...s, sendingMessage: false, streamingAssistantText: "" }));
+    setState((s) => ({ ...s, sendingMessage: false, streamingFinalText: "",
+    runtimeTrace: [] }));
     void refreshBilling();
   }
 }
@@ -445,6 +468,7 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
       };
   const messages = state.messagesBySession[session.id] ?? [];
   const summaries = state.summariesBySession[session.id] ?? [];
+  const agentSkills = agent ? await loadAgentSkills(agent.id) : [];
 
   const runtime = new SessionRuntime({
     sessionId: session.id,
@@ -452,6 +476,7 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     profile: state.profile,
     project,
     agent,
+    agentSkills,
     messages,
     summaries,
     toolActions: {
@@ -477,8 +502,10 @@ function onRuntimeStateChanged(sessionId: string, runtimeState: SessionRuntimeSt
       ...state,
       messagesBySession: { ...state.messagesBySession, [sessionId]: runtimeState.messages },
       summariesBySession: { ...state.summariesBySession, [sessionId]: runtimeState.summaries },
-      streamingAssistantText:
-        currentSelectionId === sessionId ? runtimeState.streamingAssistantText : state.streamingAssistantText,
+      streamingFinalText:
+        currentSelectionId === sessionId ? runtimeState.streamingFinalText : state.streamingFinalText,
+      runtimeTrace:
+        currentSelectionId === sessionId ? runtimeState.trace : state.runtimeTrace,
       sendingMessage: currentSelectionId === sessionId ? runtimeState.isStreaming : state.sendingMessage,
     };
   });
