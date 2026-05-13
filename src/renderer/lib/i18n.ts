@@ -91,6 +91,9 @@ const dictionaries = {
     "chat.error.timeout": "The model did not respond within the timeout. Try again or shorten the request.",
     "chat.error.generic": "Stream failed: {message}",
     "chat.error.dismiss": "Dismiss",
+    "chat.stream.show": "Show stream output",
+    "chat.stream.hide": "Hide stream output",
+    "chat.stream.empty": "Waiting for output…",
 
     "usage.title": "Usage",
     "usage.hourly": "Hour",
@@ -188,6 +191,9 @@ const dictionaries = {
     "chat.error.timeout": "Модель не ответила за отведённое время. Попробуйте ещё раз или сократите запрос.",
     "chat.error.generic": "Ошибка стрима: {message}",
     "chat.error.dismiss": "Скрыть",
+    "chat.stream.show": "Показать поток",
+    "chat.stream.hide": "Скрыть поток",
+    "chat.stream.empty": "Ожидание ответа…",
 
     "usage.title": "Использование",
     "usage.hourly": "Час",

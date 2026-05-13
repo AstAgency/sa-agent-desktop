@@ -53,8 +53,6 @@ export function ChatView() {
     ? translate(language, "chat.scope.project", { project: project.name })
     : translate(language, "chat.scope.global");
 
-  const showTypingIndicator = sending && streamingText.length === 0;
-
   const showError =
     lastStreamError && selection.kind === "session" && lastStreamError.sessionId === selection.sessionId;
 
@@ -75,10 +73,7 @@ export function ChatView() {
         {visibleMessages.map((message) => (
           <MessageView key={message.id} message={message} language={language} />
         ))}
-        {streamingText.length > 0 ? (
-          <StreamingMessage text={streamingText} language={language} />
-        ) : null}
-        {showTypingIndicator ? <ThinkingIndicator language={language} /> : null}
+        {sending ? <StreamingTrace text={streamingText} language={language} /> : null}
         {showError ? (
           <StreamErrorBubble
             message={lastStreamError!.message}
@@ -88,8 +83,7 @@ export function ChatView() {
         ) : null}
         {!isLoading &&
         visibleMessages.length === 0 &&
-        streamingText.length === 0 &&
-        !showTypingIndicator &&
+        !sending &&
         !showError ? (
           <p style={{ color: "var(--text-muted)" }}>
             {translate(language, "chat.typeToStart")}
@@ -99,7 +93,7 @@ export function ChatView() {
         <BottomAnchor
           messages={visibleMessages}
           streamingText={streamingText}
-          typing={showTypingIndicator}
+          sending={sending}
         />
       </div>
 
@@ -175,17 +169,39 @@ function StreamErrorBubble({
   );
 }
 
-function ThinkingIndicator({ language }: { language: AppLanguage }) {
+function StreamingTrace({ text, language }: { text: string; language: AppLanguage }) {
   const word = useThinkingWord(language);
+  const [expanded, setExpanded] = useState(false);
+  const hasText = text.length > 0;
   return (
-    <div className="message-row assistant" aria-live="polite">
+    <div className="message-row assistant stream-trace" aria-live="polite">
       <span className="message-role">{translate(language, "chat.role.thinking")}</span>
       <div className="typing-bubble" aria-label={translate(language, "chat.role.thinking")}>
         <span className="thinking-word">{word}…</span>
         <span className="dot" />
         <span className="dot" />
         <span className="dot" />
+        <button
+          type="button"
+          className="stream-trace-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <span className={`chevron ${expanded ? "open" : ""}`} aria-hidden="true" />
+          {translate(language, expanded ? "chat.stream.hide" : "chat.stream.show")}
+        </button>
       </div>
+      {expanded ? (
+        <div className="stream-trace-body" role="region">
+          {hasText ? (
+            <Markdown content={text} />
+          ) : (
+            <span className="stream-trace-empty">
+              {translate(language, "chat.stream.empty")}
+            </span>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -232,30 +248,19 @@ function MessageView({ message, language }: { message: Message; language: AppLan
   );
 }
 
-function StreamingMessage({ text, language }: { text: string; language: AppLanguage }) {
-  return (
-    <div className="message-row assistant">
-      <span className="message-role">{translate(language, "chat.role.assistant")}</span>
-      <div className="message-bubble">
-        <Markdown content={text} />
-      </div>
-    </div>
-  );
-}
-
 function BottomAnchor({
   messages,
   streamingText,
-  typing,
+  sending,
 }: {
   messages: Message[];
   streamingText: string;
-  typing: boolean;
+  sending: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, streamingText, typing]);
+  }, [messages.length, streamingText, sending]);
   return <div ref={ref} />;
 }
 

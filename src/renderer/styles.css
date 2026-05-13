@@ -844,6 +844,56 @@ details > summary:hover .row-kebab {
   40% { transform: translateY(-3px); opacity: 1; }
 }
 
+.stream-trace-toggle {
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.stream-trace-toggle:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.stream-trace-toggle .chevron {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid currentColor;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease-out;
+}
+
+.stream-trace-toggle .chevron.open {
+  transform: rotate(0deg);
+}
+
+.stream-trace-body {
+  margin-top: 6px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bubble-assistant-bg) 60%, transparent);
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.stream-trace-empty {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 .chat-composer {
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
