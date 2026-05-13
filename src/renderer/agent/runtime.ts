@@ -32,7 +32,7 @@ import type {
   WorkspaceScope,
 } from "../lib/types";
 
-export const DEFAULT_MODEL = "deepseek-chat";
+export const DEFAULT_MODEL = "deepseek-v4-pro";
 
 const BACKEND_MODEL: Model<"openai-completions"> = {
   id: "sa-agent-backend",
@@ -40,7 +40,7 @@ const BACKEND_MODEL: Model<"openai-completions"> = {
   api: "openai-completions",
   provider: "sa-agent-backend",
   baseUrl: "internal://sa-agent",
-  reasoning: false,
+  reasoning: true,
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: 1_000_000,

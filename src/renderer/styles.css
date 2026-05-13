@@ -1204,7 +1204,7 @@ details > summary:hover .row-kebab {
   padding: 10px 12px;
   font-size: 14px;
   resize: vertical;
-  min-height: 64px;
+  min-height: 67px;
   max-height: 240px;
 }
 
