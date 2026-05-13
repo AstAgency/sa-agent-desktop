@@ -82,6 +82,7 @@ export class PythonRuntime {
         SA_AGENT_HF_CACHE: this.paths.hfCacheDir,
         HF_HOME: this.paths.hfCacheDir,
         HUGGINGFACE_HUB_CACHE: this.paths.hfCacheDir,
+        TOKENIZERS_PARALLELISM: "false",
         TRANSFORMERS_OFFLINE: "1",
         HF_HUB_OFFLINE: "1",
       },

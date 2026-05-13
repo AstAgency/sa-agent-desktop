@@ -94,6 +94,7 @@ export class SearxngRuntime {
       env: {
         ...process.env,
         PYTHONUNBUFFERED: "1",
+        TOKENIZERS_PARALLELISM: "false",
         SEARXNG_SETTINGS_PATH: this.paths.effectiveSettingsPath,
         SEARXNG_PORT: String(port),
         SEARXNG_BIND_ADDRESS: "127.0.0.1",

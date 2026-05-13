@@ -5,20 +5,16 @@
 # server.bind_address, and server.port with values it picks at runtime.
 #
 # Engine selection: SearXNG is a metasearch, so stability depends on each
-# adapter. From a self-hosted instance without residential IPs, the major
-# scrapers (DuckDuckGo, Google, Startpage, Yahoo) trigger CAPTCHA or
-# disconnect mid-stream after a few queries. We deliberately pick engines
-# that either expose a real API or are tolerant of small instances.
+# adapter. From a desktop-local instance without API keys, many major
+# scrapers deny requests quickly (DuckDuckGo/Startpage/Yahoo CAPTCHA,
+# Brave/Qwant/Mojeek 403/429, Wikidata SPARQL 403 during init). Keep the
+# default set small and favor engines that are currently less noisy.
 
 use_default_settings:
   engines:
     keep_only:
-      - brave
-      - mojeek
-      - qwant
-      - wikipedia
-      - wikidata
       - bing
+      - wikipedia
       - github
       - stackoverflow
 
@@ -79,24 +75,12 @@ outgoing:
   enable_http2: false
 
 engines:
-  - name: brave
-    disabled: false
-    timeout: 6.0
-  - name: mojeek
-    disabled: false
-    timeout: 6.0
-  - name: qwant
-    disabled: false
-    timeout: 6.0
-  - name: wikipedia
-    disabled: false
-    timeout: 4.0
-  - name: wikidata
-    disabled: false
-    timeout: 6.0
   - name: bing
     disabled: false
     timeout: 5.0
+  - name: wikipedia
+    disabled: false
+    timeout: 4.0
   - name: github
     disabled: false
     timeout: 5.0
