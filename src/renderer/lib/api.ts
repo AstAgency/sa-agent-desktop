@@ -25,9 +25,72 @@ import type {
   UpdateBillingLimitsInput,
   UpdateSummaryInput,
 } from "./types";
+import { refreshTokens } from "./auth-api";
+import {
+  clearAuthSession,
+  getAccessToken,
+  getAuthSession,
+  getRefreshToken,
+  setAuthSession,
+} from "./token-store";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3000";
 const BASE_URL_STORAGE_KEY = "sa-agent.backend-url";
+
+/**
+ * Single-flight refresh. Multiple concurrent 401s share the same refresh
+ * promise so we don't burn the refresh token with parallel rotations.
+ */
+let inflightRefresh: Promise<boolean> | null = null;
+let onSessionInvalidated: (() => void) | null = null;
+
+export function setAuthInvalidationHandler(handler: (() => void) | null): void {
+  onSessionInvalidated = handler;
+}
+
+async function attemptTokenRefresh(): Promise<boolean> {
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+    try {
+      const session = await refreshTokens(refreshToken);
+      // Preserve the cached user if the refresh endpoint omits it.
+      const existing = getAuthSession();
+      const user =
+        session.user.id.length > 0 ? session.user : existing?.user ?? session.user;
+      setAuthSession({ user, tokens: session.tokens });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      inflightRefresh = null;
+    }
+  })();
+  return inflightRefresh;
+}
+
+function buildAuthorizedHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  const token = getAccessToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  return headers;
+}
+
+async function fetchWithAuth(url: string, init: RequestInit): Promise<Response> {
+  const headers = buildAuthorizedHeaders(init.headers);
+  const response = await fetch(url, { ...init, headers });
+  if (response.status !== 401) return response;
+  const refreshed = await attemptTokenRefresh();
+  if (!refreshed) {
+    clearAuthSession();
+    onSessionInvalidated?.();
+    return response;
+  }
+  // Replay once with the new token.
+  const retryHeaders = buildAuthorizedHeaders(init.headers);
+  return fetch(url, { ...init, headers: retryHeaders });
+}
 
 function getBackendUrl(): string {
   if (typeof window !== "undefined") {
@@ -67,7 +130,7 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal: options?.signal,
   };
-  const response = await fetch(url, init);
+  const response = await fetchWithAuth(url, init);
   if (!response.ok) {
     const message = await readErrorMessage(response);
     throw new Error(`${response.status} ${method} ${path}: ${message}`);
@@ -422,7 +485,7 @@ export async function streamChatCompletion(
   options?: RequestOptions,
 ): Promise<StreamChatResult> {
   const url = `${getBackendUrl()}/v1/chat/completions`;
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify({ ...payload, stream: true }),

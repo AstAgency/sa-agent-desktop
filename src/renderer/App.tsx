@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
+import { AuthScreen } from "./components/AuthScreen";
 import { UserProfileModal } from "./components/UserProfileModal";
 import { translate } from "./lib/i18n";
 import { bootstrap, startPythonRuntime } from "./state/controller";
+import { initializeAuth } from "./state/auth-controller";
 import { useClientState } from "./state/store";
 
 export function App() {
@@ -15,6 +17,7 @@ export function App() {
   const language = useClientState((state) => state.language);
   const sidebarCollapsed = useClientState((state) => state.sidebarCollapsed);
   const profileModalOpen = useClientState((state) => state.profileModalOpen);
+  const authStatus = useClientState((state) => state.auth.status);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -27,6 +30,28 @@ export function App() {
   useEffect(() => {
     void initialize();
   }, []);
+
+  useEffect(() => {
+    if (authStatus === "authenticated" && status === "idle") {
+      void bootstrap();
+    }
+  }, [authStatus, status]);
+
+  if (authStatus === "loading") {
+    return (
+      <section className="boot-screen">
+        <h1>{translate(language, "app.title")}</h1>
+        <p>{translate(language, "boot.starting")}</p>
+        <div className="progress">
+          <span />
+        </div>
+      </section>
+    );
+  }
+
+  if (authStatus === "unauthenticated") {
+    return <AuthScreen />;
+  }
 
   if (status !== "ready") {
     return (
@@ -76,5 +101,6 @@ export function App() {
 
 async function initialize() {
   void startPythonRuntime();
-  await bootstrap();
+  const ok = await initializeAuth();
+  if (ok) await bootstrap();
 }

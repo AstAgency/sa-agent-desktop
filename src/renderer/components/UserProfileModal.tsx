@@ -9,6 +9,7 @@ import {
   useClientState,
   type ThemeMode,
 } from "../state/store";
+import { signOut } from "../state/auth-controller";
 import type { AppLanguage } from "../lib/i18n";
 import type { SearchStatus } from "../lib/types";
 
@@ -177,6 +178,15 @@ export function UserProfileModal() {
         </div>
 
         <div className="footer">
+          <button
+            className="secondary"
+            onClick={() => {
+              setProfileModalOpen(false);
+              signOut();
+            }}
+          >
+            {translate(language, "auth.signOut")}
+          </button>
           <button className="primary" onClick={() => setProfileModalOpen(false)}>
             {translate(language, "profile.close")}
           </button>

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { AppLanguage } from "../lib/i18n";
 import type { RuntimeTraceEvent } from "../agent/runtime";
+import type { AuthSession } from "../lib/auth-api";
 import type {
   Agent,
   Billing,
@@ -11,6 +12,14 @@ import type {
   Session,
   Summary,
 } from "../lib/types";
+
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+
+export type AuthSlice = {
+  status: AuthStatus;
+  session: AuthSession | null;
+  error: string | null;
+};
 
 export type ChatErrorKind = "rate_limit" | "timeout" | "generic";
 
@@ -29,6 +38,7 @@ export type ActiveSelection =
 export type ThemeMode = "dark" | "light";
 
 export type ClientState = {
+  auth: AuthSlice;
   bootstrap: {
     status: "idle" | "loading" | "ready" | "error";
     error: string | null;
@@ -85,6 +95,7 @@ function detectDefaultLanguage(): AppLanguage {
 const persisted = readPersistedSettings();
 
 const initialState: ClientState = {
+  auth: { status: "loading", session: null, error: null },
   bootstrap: { status: "idle", error: null, pythonReady: false, pythonError: null },
   profile: null,
   projects: [],
@@ -168,6 +179,27 @@ export function setBilling(billing: Billing | null) {
 
 export function setLastStreamError(lastStreamError: LastStreamError | null) {
   setState((state) => ({ ...state, lastStreamError }));
+}
+
+export function setAuthLoading() {
+  setState((state) => ({
+    ...state,
+    auth: { status: "loading", session: state.auth.session, error: null },
+  }));
+}
+
+export function setAuthAuthenticated(session: AuthSession) {
+  setState((state) => ({
+    ...state,
+    auth: { status: "authenticated", session, error: null },
+  }));
+}
+
+export function setAuthUnauthenticated(error: string | null = null) {
+  setState((state) => ({
+    ...state,
+    auth: { status: "unauthenticated", session: null, error },
+  }));
 }
 
 export function subscribe(listener: Listener): () => void {
