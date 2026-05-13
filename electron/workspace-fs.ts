@@ -20,6 +20,30 @@ const ID_SUFFIX_LENGTH = 8;
 const FOLDER_NAME_LIMIT = 80;
 const ID_SEPARATOR = "__";
 
+// Virtual namespaces exposed via path prefixes so an agent can read across
+// scopes. Writes always go to the primary scope; reads can target any
+// `global/<folder>/...` (any session) and, for project scopes, only its
+// own `projects/<folder>/...`. Global scopes can also read every project.
+const NS_GLOBAL = "global";
+const NS_PROJECTS = "projects";
+const FOREIGN_NAMESPACES = [NS_GLOBAL, NS_PROJECTS] as const;
+type Namespace = (typeof FOREIGN_NAMESPACES)[number];
+
+type ResolvedPath =
+  | { kind: "primary"; absolute: string; primaryRoot: string }
+  | {
+      kind: "namespace_root";
+      namespace: Namespace;
+      absolute: string;
+    }
+  | {
+      kind: "foreign_folder";
+      namespace: Namespace;
+      folder: string;
+      absolute: string;
+      foreignRoot: string;
+    };
+
 type ScopeParts = {
   parent: string;
   id: string;
@@ -137,10 +161,92 @@ function resolveSafePath(root: string, relative: string): string {
   return resolved;
 }
 
+function parseNamespacePrefix(relative: string): { namespace: Namespace; rest: string } | null {
+  for (const ns of FOREIGN_NAMESPACES) {
+    if (relative === ns) return { namespace: ns, rest: "" };
+    if (relative.startsWith(`${ns}/`) || relative.startsWith(`${ns}\\`)) {
+      return { namespace: ns, rest: relative.slice(ns.length + 1) };
+    }
+  }
+  return null;
+}
+
+function ownFolderName(scope: WorkspaceScope): string {
+  return buildFolderName(getScopeParts(scope));
+}
+
+function isSafeFolderSegment(value: string): boolean {
+  return value.length > 0 && value !== "." && value !== "..";
+}
+
+function canReadForeignFolder(scope: WorkspaceScope, namespace: Namespace, folder: string): boolean {
+  if (scope.kind === "global") return true;
+  // project scope: any global session is readable; only own project is.
+  if (namespace === NS_GLOBAL) return true;
+  return folder === ownFolderName(scope);
+}
+
+async function resolveRequestedPath(
+  scope: WorkspaceScope,
+  relative: string,
+): Promise<ResolvedPath> {
+  if (typeof relative !== "string") throw new Error("Path must be a string");
+  if (relative.includes("\0")) throw new Error("Path must not contain NUL");
+  const stripped = relative.replace(/^([./\\]+)+/, "");
+  const namespaced = parseNamespacePrefix(stripped);
+  if (!namespaced) {
+    const root = await ensureScopeRoot(scope);
+    return { kind: "primary", absolute: resolveSafePath(root, relative), primaryRoot: root };
+  }
+  const userData = app.getPath("userData");
+  const namespaceRoot = path.join(userData, namespaced.namespace);
+  if (namespaced.rest.length === 0) {
+    return { kind: "namespace_root", namespace: namespaced.namespace, absolute: namespaceRoot };
+  }
+  const [folder, ...remaining] = namespaced.rest.split(/[\\/]+/).filter(Boolean);
+  if (!folder) {
+    return { kind: "namespace_root", namespace: namespaced.namespace, absolute: namespaceRoot };
+  }
+  if (!isSafeFolderSegment(folder)) throw new Error("Invalid namespace folder");
+  if (!canReadForeignFolder(scope, namespaced.namespace, folder)) {
+    throw new Error(
+      `Access denied: ${namespaced.namespace}/${folder} is outside this session's scope`,
+    );
+  }
+  const foreignRoot = path.join(namespaceRoot, folder);
+  const tail = remaining.join("/");
+  const absolute = tail.length > 0 ? resolveSafePath(foreignRoot, tail) : foreignRoot;
+  return {
+    kind: "foreign_folder",
+    namespace: namespaced.namespace,
+    folder,
+    absolute,
+    foreignRoot,
+  };
+}
+
+function relativeFromRoot(root: string, absolute: string): string {
+  return path.relative(root, absolute).split(path.sep).join("/");
+}
+
+function relativeFromUserData(absolute: string): string {
+  const userData = app.getPath("userData");
+  return relativeFromRoot(userData, absolute);
+}
+
+function assertPrimaryWritePath(relative: string): void {
+  const stripped = relative.replace(/^([./\\]+)+/, "");
+  if (parseNamespacePrefix(stripped)) {
+    throw new Error("Namespace paths are read-only; write to the current workspace instead");
+  }
+}
+
 export async function readFile(scope: WorkspaceScope, relative: string): Promise<string> {
-  const root = await ensureScopeRoot(scope);
-  const target = resolveSafePath(root, relative);
-  return fs.readFile(target, "utf8");
+  const resolved = await resolveRequestedPath(scope, relative);
+  if (resolved.kind === "namespace_root") {
+    throw new Error(`Cannot read namespace root as a file: ${resolved.namespace}`);
+  }
+  return fs.readFile(resolved.absolute, "utf8");
 }
 
 export async function writeFile(
@@ -148,6 +254,7 @@ export async function writeFile(
   relative: string,
   content: string,
 ): Promise<{ path: string }> {
+  assertPrimaryWritePath(relative);
   const root = await ensureScopeRoot(scope);
   const target = resolveSafePath(root, relative);
   await fs.mkdir(path.dirname(target), { recursive: true });
@@ -162,6 +269,7 @@ export async function editFile(
   newString: string,
   replaceAll: boolean,
 ): Promise<{ replacements: number; path: string }> {
+  assertPrimaryWritePath(relative);
   const root = await ensureScopeRoot(scope);
   const target = resolveSafePath(root, relative);
   if (!existsSync(target)) throw new Error(`File not found: ${relative}`);
@@ -195,17 +303,30 @@ export async function listFiles(
   scope: WorkspaceScope,
   relative: string,
 ): Promise<FileEntry[]> {
-  const root = await ensureScopeRoot(scope);
-  const target = resolveSafePath(root, relative || ".");
+  const resolved = await resolveRequestedPath(scope, relative || ".");
+  const target = resolved.absolute;
+  if (resolved.kind === "namespace_root") {
+    await fs.mkdir(target, { recursive: true });
+  }
   const entries = await fs.readdir(target, { withFileTypes: true });
   const result: FileEntry[] = [];
   for (const entry of entries) {
     if (entry.name === TMP_SUBDIR) continue;
+    if (
+      resolved.kind === "namespace_root" &&
+      !canReadForeignFolder(scope, resolved.namespace, entry.name)
+    ) {
+      continue;
+    }
     const fullPath = path.join(target, entry.name);
     const stats = await fs.stat(fullPath).catch(() => null);
+    const entryPath =
+      resolved.kind === "primary"
+        ? relativeFromRoot(resolved.primaryRoot, fullPath)
+        : relativeFromUserData(fullPath);
     result.push({
       name: entry.name,
-      path: path.relative(root, fullPath),
+      path: entryPath,
       type: entry.isDirectory() ? "directory" : "file",
       size: stats?.isFile() ? stats.size : null,
       modified_at: stats?.mtime.toISOString() ?? new Date().toISOString(),

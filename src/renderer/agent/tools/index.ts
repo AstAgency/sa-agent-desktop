@@ -33,7 +33,7 @@ export function buildWorkspaceTools(
     name: "read_file",
     label: "Read file",
     description:
-      "Read a UTF-8 text file from the workspace. The path must be relative to the workspace root.",
+      "Read a UTF-8 text file. Use paths relative to the current workspace, or read-only namespace paths from list_files such as global/<session-folder>/... and projects/<project-folder>/....",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Path relative to workspace root" }),
@@ -51,7 +51,7 @@ export function buildWorkspaceTools(
     name: "write_file",
     label: "Write file",
     description:
-      "Create or overwrite a UTF-8 text file in the workspace. Parent directories are created automatically.",
+      "Create or overwrite a UTF-8 text file in the current workspace. Parent directories are created automatically. Namespace paths are read-only.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Path relative to workspace root" }),
@@ -71,7 +71,7 @@ export function buildWorkspaceTools(
     name: "edit_file",
     label: "Edit file",
     description:
-      "Replace text within an existing file. By default the substring must be unique; use replace_all to replace every occurrence.",
+      "Replace text within an existing file in the current workspace. By default the substring must be unique; use replace_all to replace every occurrence. Namespace paths are read-only.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Path relative to workspace root" }),
@@ -94,7 +94,8 @@ export function buildWorkspaceTools(
   const listFilesTool: ToolDefinition = {
     name: "list_files",
     label: "List files",
-    description: "List files and directories at the given workspace path (defaults to root).",
+    description:
+      "List files and directories at the given path (defaults to current workspace root). Also supports read-only namespace roots: global and projects.",
     parameters: Type.Object(
       {
         path: Type.Optional(
@@ -191,7 +192,7 @@ export function buildWorkspaceTools(
     name: "web_search",
     label: "Web search",
     description:
-      "Run a web search via the configured provider (Brave or Tavily). Returns top results with title, URL, and snippet.",
+      "Run a web search via local SearXNG. Returns top results with title, URL, and snippet.",
     parameters: Type.Object(
       {
         query: Type.String({ description: "Search query (1..256 chars)" }),

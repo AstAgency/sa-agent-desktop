@@ -4,25 +4,23 @@
 # user data directory at startup, then overrides server.secret_key,
 # server.bind_address, and server.port with values it picks at runtime.
 #
-# Keep this file lean — `use_default_settings.engines.keep_only` pulls
-# SearXNG's bundled defaults but restricts engines to a curated list
-# that works without residential IPs / API keys.
-#
-# Excluded by design:
-#   - wikidata: SPARQL endpoint returns 403 to non-browser UAs (init fails)
-#   - brave/qwant: aggressively block datacenter IPs (429 / access denied)
-#   - google: requires consent cookies / blocks scraping
-#   - karmasearch and other small engines that throttle hard
+# Engine selection: SearXNG is a metasearch, so stability depends on each
+# adapter. From a self-hosted instance without residential IPs, the major
+# scrapers (DuckDuckGo, Google, Startpage, Yahoo) trigger CAPTCHA or
+# disconnect mid-stream after a few queries. We deliberately pick engines
+# that either expose a real API or are tolerant of small instances.
 
 use_default_settings:
   engines:
     keep_only:
-      - duckduckgo
-      - bing
-      - wikipedia
+      - brave
       - mojeek
-      - yahoo
-      - startpage
+      - qwant
+      - wikipedia
+      - wikidata
+      - bing
+      - github
+      - stackoverflow
 
 general:
   debug: false
@@ -70,29 +68,38 @@ ui:
   theme_args:
     simple_style: auto
 
+# Conservative outgoing settings — we are a single user, not a public
+# instance. Keeping the pool small and disabling HTTP/2 reduces the chance
+# of SearXNG looking like a bot to upstream engines.
 outgoing:
   request_timeout: 5.0
   max_request_timeout: 10.0
-  pool_connections: 32
-  pool_maxsize: 16
-  enable_http2: true
+  pool_connections: 10
+  pool_maxsize: 10
+  enable_http2: false
 
 engines:
-  - name: duckduckgo
+  - name: brave
     disabled: false
-    timeout: 5.0
-  - name: bing
-    disabled: false
-    timeout: 5.0
-  - name: wikipedia
-    disabled: false
-    timeout: 4.0
+    timeout: 6.0
   - name: mojeek
     disabled: false
     timeout: 6.0
-  - name: yahoo
+  - name: qwant
     disabled: false
     timeout: 6.0
-  - name: startpage
+  - name: wikipedia
+    disabled: false
+    timeout: 4.0
+  - name: wikidata
     disabled: false
     timeout: 6.0
+  - name: bing
+    disabled: false
+    timeout: 5.0
+  - name: github
+    disabled: false
+    timeout: 5.0
+  - name: stackoverflow
+    disabled: false
+    timeout: 5.0
