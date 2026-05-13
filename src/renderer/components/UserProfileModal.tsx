@@ -10,15 +10,14 @@ import {
   type ThemeMode,
 } from "../state/store";
 import type { AppLanguage } from "../lib/i18n";
+import type { SearchStatus } from "../lib/types";
 
 export function UserProfileModal() {
   const language = useClientState((state) => state.language);
   const theme = useClientState((state) => state.theme);
   const profile = useClientState((state) => state.profile);
-  const [searchEndpoint, setSearchEndpoint] = useState("");
-  const [defaultSearchEndpoint, setDefaultSearchEndpoint] = useState("http://localhost:8000");
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>({ state: "stopped" });
   const [searchBusy, setSearchBusy] = useState(false);
-  const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const backdropRef = useRef<HTMLDivElement | null>(null);
@@ -34,11 +33,10 @@ export function UserProfileModal() {
   useEffect(() => {
     let cancelled = false;
     void getBridge()
-      .net.getSearchConfig()
-      .then((config) => {
+      .net.getSearchStatus()
+      .then((status) => {
         if (cancelled) return;
-        setSearchEndpoint(config.endpoint);
-        setDefaultSearchEndpoint(config.defaultEndpoint);
+        setSearchStatus(status);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -52,26 +50,24 @@ export function UserProfileModal() {
   const displayName = profile?.name ?? translate(language, "profile.unknown");
   const initials = getInitials(displayName);
 
-  async function handleSearchSave() {
+  async function handleSearchStart() {
     setSearchBusy(true);
-    setSearchMessage(null);
     setSearchError(null);
+    setSearchStatus({ state: "starting" });
     try {
-      const config = await getBridge().net.setSearchEndpoint(searchEndpoint);
-      setSearchEndpoint(config.endpoint);
-      setDefaultSearchEndpoint(config.defaultEndpoint);
-      await getBridge().net.testSearchEndpoint(config.endpoint);
-      setSearchMessage(translate(language, "profile.search.testOk"));
+      const next = await getBridge().net.startSearch();
+      setSearchStatus(next);
     } catch (error) {
-      setSearchError(
-        `${translate(language, "profile.search.testFail")}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      setSearchError(message);
+      setSearchStatus({ state: "failed", error: message });
     } finally {
       setSearchBusy(false);
     }
   }
+
+  const statusBadge = renderStatusBadge(searchStatus, language);
+  const canStart = searchStatus.state !== "running" && searchStatus.state !== "starting" && !searchBusy;
 
   return (
     <div
@@ -154,36 +150,30 @@ export function UserProfileModal() {
 
         <div className="section">
           <h3>{translate(language, "profile.section.search")}</h3>
-          <label className="profile-field">
-            <span className="field-label">{translate(language, "profile.search.endpoint")}</span>
-            <input
-              type="url"
-              value={searchEndpoint}
-              placeholder={defaultSearchEndpoint}
-              onChange={(event) => {
-                setSearchEndpoint(event.target.value);
-                setSearchMessage(null);
-                setSearchError(null);
-              }}
-            />
-            <span className="field-hint">
-              {translate(language, "profile.search.endpointHint")}
+          <p className="profile-search-description">
+            {translate(language, "profile.search.description")}
+          </p>
+          <div className="detail-row">
+            <span className="key">{translate(language, "profile.search.status")}</span>
+            <span className={`value status-badge status-${searchStatus.state}`}>
+              {statusBadge}
             </span>
-          </label>
+          </div>
           <div className="profile-inline-actions">
             <button
               className="primary"
               type="button"
-              onClick={() => void handleSearchSave()}
-              disabled={searchBusy}
+              onClick={() => void handleSearchStart()}
+              disabled={!canStart}
             >
-              {searchBusy
-                ? translate(language, "profile.search.saving")
-                : translate(language, "profile.search.save")}
+              {searchBusy || searchStatus.state === "starting"
+                ? translate(language, "profile.search.starting")
+                : translate(language, "profile.search.start")}
             </button>
           </div>
-          {searchMessage ? <div className="profile-status ok">{searchMessage}</div> : null}
-          {searchError ? <div className="profile-status error">{searchError}</div> : null}
+          {searchError && searchStatus.state !== "failed" ? (
+            <div className="profile-status error">{searchError}</div>
+          ) : null}
         </div>
 
         <div className="footer">
@@ -202,4 +192,18 @@ function getInitials(name: string): string {
   const parts = cleaned.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function renderStatusBadge(status: SearchStatus, language: AppLanguage): string {
+  switch (status.state) {
+    case "running":
+      return translate(language, "profile.search.status.running", { port: String(status.port) });
+    case "starting":
+      return translate(language, "profile.search.status.starting");
+    case "failed":
+      return translate(language, "profile.search.status.failed", { error: status.error });
+    case "stopped":
+    default:
+      return translate(language, "profile.search.status.stopped");
+  }
 }

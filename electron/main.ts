@@ -4,9 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApplicationMenuTemplate } from "./application-menu.js";
 import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
+import { SearxngRuntime } from "./searxng-runtime.js";
 import { fetchUrl } from "./net/http-fetcher.js";
-import { createSecretsStore } from "./net/secrets-store.js";
-import { pingSearchEndpoint, runSearch } from "./net/web-search.js";
+import { runSearch } from "./net/web-search.js";
 import {
   editFile,
   ensureScopeRoot,
@@ -31,6 +31,7 @@ if (testUserDataDir) {
 }
 
 const pythonRuntime = new PythonRuntime(resolvePythonRuntimePaths());
+const searxngRuntime = new SearxngRuntime();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -146,10 +147,6 @@ function ipcResult<T>(handler: () => Promise<T>): Promise<{ ok: true; value: T }
 app.whenReady().then(async () => {
   configureApplicationBranding();
   installApplicationMenu();
-  const secretsStore = createSecretsStore({
-    userDataPath: app.getPath("userData"),
-    defaultSearchEndpoint: process.env.SA_AGENT_ORIO_URL,
-  });
   const userAgent = `SA-AgentDesktop/${app.getVersion()} (+https://github.com/AstAgency/sa-agent-desktop)`;
 
   ipcMain.handle("sa-agent:python-status", () => pythonRuntime.getStatus());
@@ -314,30 +311,18 @@ app.whenReady().then(async () => {
     ipcResult(async () => {
       if (typeof queryPayload !== "string") throw new Error("query must be a string");
       return runSearch(queryPayload, typeof limitPayload === "number" ? limitPayload : 5, {
-        secretsStore,
+        searxng: searxngRuntime,
       });
     }),
   );
 
-  ipcMain.handle(
-    "sa-agent:net-set-search-endpoint",
-    (_event, endpointPayload: unknown) =>
-      ipcResult(async () => {
-        if (typeof endpointPayload !== "string") throw new Error("endpoint must be a string");
-        return secretsStore.setSearchEndpoint(endpointPayload);
-      }),
-  );
+  ipcMain.handle("sa-agent:net-get-search-status", () => searxngRuntime.getStatus());
 
-  ipcMain.handle("sa-agent:net-test-search-endpoint", (_event, endpointPayload: unknown) =>
+  ipcMain.handle("sa-agent:net-start-search", () =>
     ipcResult(async () => {
-      if (typeof endpointPayload !== "string") throw new Error("endpoint must be a string");
-      await pingSearchEndpoint(endpointPayload);
-      return { ok: true as const };
+      await searxngRuntime.ensureRunning();
+      return searxngRuntime.getStatus();
     }),
-  );
-
-  ipcMain.handle("sa-agent:net-get-search-config", () =>
-    ipcResult(async () => secretsStore.getSearchConfig()),
   );
 
   pythonRuntime.start().catch((error) => {
@@ -351,10 +336,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", async () => {
-  await pythonRuntime.stop().catch(() => undefined);
+  await Promise.allSettled([pythonRuntime.stop(), searxngRuntime.stop()]);
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", async () => {
-  await pythonRuntime.stop().catch(() => undefined);
+  await Promise.allSettled([pythonRuntime.stop(), searxngRuntime.stop()]);
 });

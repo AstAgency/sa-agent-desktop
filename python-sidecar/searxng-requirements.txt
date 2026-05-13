@@ -1,0 +1,9 @@
+# SearXNG bundled into the python sidecar's venv.
+#
+# Pinned to a specific commit for reproducibility. To bump:
+#   1) Pick a commit from https://github.com/searxng/searxng
+#   2) Replace the SHA below
+#   3) Run `SA_AGENT_REBUILD_PYTHON=1 npm run build:python`
+#
+# SearXNG is not published to PyPI; we install from git.
+git+https://github.com/searxng/searxng.git@master#egg=searxng

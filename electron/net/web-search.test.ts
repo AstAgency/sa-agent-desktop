@@ -9,10 +9,9 @@ test("normalizeSearchLimit clamps into supported range", () => {
   assert.equal(normalizeSearchLimit(50), 10);
 });
 
-test("formatSearchResults produces compact numbered output with endpoint", () => {
+test("formatSearchResults produces compact numbered output", () => {
   const text = formatSearchResults({
     query: "react markdown best practices",
-    endpoint: "http://localhost:8000",
     results: [
       {
         title: "React Markdown",
@@ -29,7 +28,7 @@ test("formatSearchResults produces compact numbered output with endpoint", () =>
   });
 
   assert.match(text, /^Query: "react markdown best practices"/m);
-  assert.match(text, /^Provider: orio \(http:\/\/localhost:8000\)/m);
+  assert.match(text, /^Provider: SearXNG \(local\)/m);
   assert.match(text, /^Results \(2\):/m);
   assert.match(text, /1\. React Markdown/);
   assert.match(text, /https:\/\/example\.com\/react-markdown/);

@@ -1,0 +1,79 @@
+# SearXNG settings template for SA-Agent Desktop.
+#
+# The launcher (electron/searxng-runtime.ts) copies this file into the
+# user data directory at startup, then overrides server.secret_key,
+# server.bind_address, and server.port with values it picks at runtime.
+#
+# Keep this file lean — `use_default_settings: true` pulls SearXNG's
+# bundled defaults so we only need to record overrides.
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "SA-Agent local search"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+  formats:
+    - html
+    - json
+
+server:
+  # bind_address, port and secret_key are overwritten by the launcher.
+  bind_address: "127.0.0.1"
+  port: 8888
+  secret_key: "REPLACED_AT_RUNTIME"
+  base_url: false
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  http_protocol_version: "1.0"
+  method: "GET"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+ui:
+  static_use_hash: true
+  default_locale: en
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+  cache_url: https://web.archive.org/web/
+  default_theme: simple
+  theme_args:
+    simple_style: auto
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 32
+  pool_maxsize: 16
+  enable_http2: true
+
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: startpage
+    disabled: true
+  - name: google
+    disabled: true

@@ -8,7 +8,9 @@
 //   3) Create a venv at resources/python-runtime/<platform>/venv that uses
 //      the bundled interpreter.
 //   4) pip install python-sidecar/requirements.txt into that venv.
-//   5) Pre-download the intfloat/multilingual-e5-large model weights into
+//   5) pip install python-sidecar/searxng-requirements.txt into that venv
+//      (SearXNG metasearch bundled for the web_search tool).
+//   6) Pre-download the intfloat/multilingual-e5-large model weights into
 //      resources/python-runtime/<platform>/hf-cache so first run is offline.
 //
 // The script is idempotent for a given target: if the runtime already exists
@@ -75,6 +77,13 @@ console.log(`[python-runtime] installing requirements`);
 execFileSync(
   venvPython,
   ["-m", "pip", "install", "-r", join(projectRoot, "python-sidecar", "requirements.txt")],
+  { stdio: "inherit" },
+);
+
+console.log(`[python-runtime] installing searxng`);
+execFileSync(
+  venvPython,
+  ["-m", "pip", "install", "-r", join(projectRoot, "python-sidecar", "searxng-requirements.txt")],
   { stdio: "inherit" },
 );
 

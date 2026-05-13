@@ -1,4 +1,4 @@
-import type { SecretsStore } from "./secrets-store.js";
+import type { SearxngRuntime } from "../searxng-runtime.js";
 
 export type SearchResult = {
   title: string;
@@ -8,7 +8,7 @@ export type SearchResult = {
 
 type SearchDeps = {
   fetchImpl?: typeof fetch;
-  secretsStore: SecretsStore;
+  searxng: Pick<SearxngRuntime, "ensureRunning">;
 };
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -22,12 +22,11 @@ export function normalizeSearchLimit(value: unknown): number {
 
 export function formatSearchResults(input: {
   query: string;
-  endpoint: string;
   results: SearchResult[];
 }): string {
   const lines = [
     `Query: "${input.query}"`,
-    `Provider: orio (${input.endpoint})`,
+    `Provider: SearXNG (local)`,
     `Results (${input.results.length}):`,
   ];
   for (const [index, result] of input.results.entries()) {
@@ -47,38 +46,30 @@ export async function runSearch(
   if (trimmedQuery.length === 0) throw new Error("query must be non-empty");
   if (trimmedQuery.length > 256) throw new Error("query must be 256 chars or fewer");
 
-  const config = await deps.secretsStore.getSearchConfig();
-  const endpoint = config.endpoint;
-  if (!endpoint) {
-    throw new Error(
-      "Web search endpoint is not configured. Open Profile → Web search to set the OrioSearch URL.",
-    );
-  }
-
+  const { port } = await deps.searxng.ensureRunning();
+  const normalizedLimit = normalizeSearchLimit(limit);
   const fetchImpl = deps.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
+  const params = new URLSearchParams({
+    q: trimmedQuery,
+    format: "json",
+    safesearch: "0",
+    language: "auto",
+  });
+
   try {
-    const response = await fetchImpl(`${endpoint}/search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        query: trimmedQuery,
-        max_results: normalizeSearchLimit(limit),
-        search_depth: "basic",
-        topic: "general",
-        include_answer: false,
-        include_images: false,
-        include_raw_content: false,
-      }),
+    const response = await fetchImpl(`http://127.0.0.1:${port}/search?${params.toString()}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const detail = await safeReadError(response);
       throw new Error(
-        `OrioSearch request failed (${response.status}${detail ? `: ${detail}` : ""})`,
+        `SearXNG request failed (${response.status}${detail ? `: ${detail}` : ""})`,
       );
     }
 
@@ -87,7 +78,7 @@ export async function runSearch(
     };
 
     const results: SearchResult[] = (payload.results ?? [])
-      .slice(0, normalizeSearchLimit(limit))
+      .slice(0, normalizedLimit)
       .map((entry) => ({
         title: cleanText(entry.title, "Untitled result"),
         url: cleanText(entry.url, ""),
@@ -95,33 +86,11 @@ export async function runSearch(
       }))
       .filter((entry) => entry.url.length > 0);
 
-    return formatSearchResults({ query: trimmedQuery, endpoint, results });
+    return formatSearchResults({ query: trimmedQuery, results });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error(`OrioSearch request timed out after ${SEARCH_TIMEOUT_MS}ms`);
+      throw new Error(`SearXNG request timed out after ${SEARCH_TIMEOUT_MS}ms`);
     }
-    throw error instanceof Error
-      ? error
-      : new Error(String(error));
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function pingSearchEndpoint(
-  endpoint: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  const normalized = endpoint.trim().replace(/\/+$/, "");
-  if (normalized.length === 0) throw new Error("Endpoint URL is empty");
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5_000);
-  try {
-    const response = await fetchImpl(`${normalized}/health`, { signal: controller.signal });
-    if (!response.ok) throw new Error(`Health check failed with status ${response.status}`);
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error("Endpoint health check timed out");
     throw error instanceof Error ? error : new Error(String(error));
   } finally {
     clearTimeout(timer);
@@ -130,8 +99,8 @@ export async function pingSearchEndpoint(
 
 async function safeReadError(response: Response): Promise<string | null> {
   try {
-    const payload = (await response.json()) as { detail?: string } | undefined;
-    if (payload?.detail) return payload.detail;
+    const text = await response.text();
+    if (text.length > 0) return text.slice(0, 300);
   } catch {
     // ignore
   }

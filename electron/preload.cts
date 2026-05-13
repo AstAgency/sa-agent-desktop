@@ -30,10 +30,11 @@ type PythonRuntimeStatus = {
   error: string | null;
 };
 
-type SearchConfig = {
-  endpoint: string;
-  defaultEndpoint: string;
-};
+type SearchStatus =
+  | { state: "stopped" }
+  | { state: "starting" }
+  | { state: "running"; port: number; pid: number | null }
+  | { state: "failed"; error: string };
 
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
   const result = await invocation;
@@ -120,14 +121,11 @@ contextBridge.exposeInMainWorld("saAgent", {
     webSearch(query: string, limit?: number): Promise<string> {
       return unwrap(ipcRenderer.invoke("sa-agent:net-web-search", query, limit ?? 5));
     },
-    setSearchEndpoint(endpoint: string): Promise<SearchConfig> {
-      return unwrap(ipcRenderer.invoke("sa-agent:net-set-search-endpoint", endpoint));
+    getSearchStatus(): Promise<SearchStatus> {
+      return ipcRenderer.invoke("sa-agent:net-get-search-status") as Promise<SearchStatus>;
     },
-    testSearchEndpoint(endpoint: string): Promise<{ ok: true }> {
-      return unwrap(ipcRenderer.invoke("sa-agent:net-test-search-endpoint", endpoint));
-    },
-    getSearchConfig(): Promise<SearchConfig> {
-      return unwrap(ipcRenderer.invoke("sa-agent:net-get-search-config"));
+    startSearch(): Promise<SearchStatus> {
+      return unwrap(ipcRenderer.invoke("sa-agent:net-start-search"));
     },
   },
 });

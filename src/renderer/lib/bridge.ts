@@ -2,7 +2,7 @@ import type {
   FileEntry,
   PythonRuntimeStatus,
   RunPythonResult,
-  SearchConfig,
+  SearchStatus,
   WorkspaceScope,
 } from "./types";
 
@@ -40,9 +40,8 @@ type Bridge = {
       options?: { timeoutMs?: number; maxChars?: number; mode?: "readable" | "raw" },
     ) => Promise<string>;
     webSearch: (query: string, limit?: number) => Promise<string>;
-    setSearchEndpoint: (endpoint: string) => Promise<SearchConfig>;
-    testSearchEndpoint: (endpoint: string) => Promise<{ ok: true }>;
-    getSearchConfig: () => Promise<SearchConfig>;
+    getSearchStatus: () => Promise<SearchStatus>;
+    startSearch: () => Promise<SearchStatus>;
   };
 };
 

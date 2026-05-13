@@ -258,7 +258,8 @@ export type PythonRuntimeStatus = {
   error: string | null;
 };
 
-export type SearchConfig = {
-  endpoint: string;
-  defaultEndpoint: string;
-};
+export type SearchStatus =
+  | { state: "stopped" }
+  | { state: "starting" }
+  | { state: "running"; port: number; pid: number | null }
+  | { state: "failed"; error: string };
