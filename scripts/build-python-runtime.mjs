@@ -25,7 +25,7 @@
 // and ``SA_AGENT_REBUILD_PYTHON=1`` is not set, it does nothing.
 
 import { execFileSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
+import { createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, copyFileSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
@@ -57,6 +57,9 @@ const pythonRoot = join(runtimeRoot, "python");
 const hfCacheRoot = join(runtimeRoot, "hf-cache");
 
 if (existsSync(pythonRoot) && existsSync(hfCacheRoot) && process.env.SA_AGENT_REBUILD_PYTHON !== "1") {
+  console.log(`[python-runtime] runtime already exists at ${runtimeRoot}, normalizing layout`);
+  prunePythonRuntime(pythonRoot);
+  materializeSymlinks(hfCacheRoot);
   console.log(`python runtime already exists at ${runtimeRoot}, skipping (set SA_AGENT_REBUILD_PYTHON=1 to force).`);
   process.exit(0);
 }
@@ -146,6 +149,12 @@ execFileSync(
   },
 );
 
+console.log(`[python-runtime] materializing symlinks in hf-cache`);
+materializeSymlinks(hfCacheRoot);
+
+console.log(`[python-runtime] pruning non-runtime files`);
+prunePythonRuntime(pythonRoot);
+
 console.log(`[python-runtime] done. runtime at ${runtimeRoot}`);
 
 // ---------------------------------------------------------------------------
@@ -180,4 +189,40 @@ async function download(url, destination) {
     throw new Error(`download failed: ${response.status} ${response.statusText}`);
   }
   await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
+}
+
+function materializeSymlinks(root) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const absolute = join(root, entry.name);
+    if (entry.isDirectory()) {
+      materializeSymlinks(absolute);
+      continue;
+    }
+    const stats = lstatSync(absolute);
+    if (!stats.isSymbolicLink()) continue;
+    const target = resolve(root, readlinkSync(absolute));
+    const temp = `${absolute}.materialized`;
+    copyFileSync(target, temp);
+    unlinkSync(absolute);
+    copyFileSync(temp, absolute);
+    unlinkSync(temp);
+  }
+}
+
+function prunePythonRuntime(root) {
+  const removablePaths = [
+    join(root, "share", "man"),
+    join(root, "lib", "pkgconfig"),
+    join(root, "lib", "idlelib"),
+    join(root, "lib", "tkinter"),
+    join(root, "lib", "turtledemo"),
+    join(root, "lib", "lib2to3"),
+    join(root, "lib", "tcl8"),
+    join(root, "lib", "tcl8.6"),
+    join(root, "lib", "tk8.6"),
+  ];
+
+  for (const target of removablePaths) {
+    if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+  }
 }

@@ -19,3 +19,4 @@ resources/python-runtime/
 .npm-cache/
 .superpowers/
 release/
+.cache/

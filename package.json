@@ -19,7 +19,8 @@
     "typecheck:main": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
     "build": "rimraf dist-electron dist tsconfig.node.tsbuildinfo && npm run typecheck && tsc -p tsconfig.node.json && vite build",
-    "dist": "npm run build && electron-builder --config electron-builder.config.mjs --publish never"
+    "dist": "npm run build && electron-builder --config electron-builder.config.mjs --publish never",
+    "dist:mac:unsigned": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.mjs -c.mac.identity=null --mac dmg zip --publish never"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.74.0",
@@ -32,6 +33,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@types/jsdom": "^28.0.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",

@@ -215,10 +215,14 @@ export function resolvePythonRuntimePaths(): PythonRuntimePaths {
 }
 
 function resolveRuntimeRoot(platformKey: string): string {
-  const resourcesPath = app.isPackaged
-    ? path.join(process.resourcesPath, "python-runtime", platformKey)
-    : path.join(app.getAppPath(), "resources", "python-runtime", platformKey);
-  return resourcesPath;
+  if (app.isPackaged) {
+    if (process.platform === "darwin") {
+      const frameworkRuntime = path.join(process.resourcesPath, "..", "Frameworks", "python-runtime", platformKey);
+      if (existsSync(frameworkRuntime)) return frameworkRuntime;
+    }
+    return path.join(process.resourcesPath, "python-runtime", platformKey);
+  }
+  return path.join(app.getAppPath(), "resources", "python-runtime", platformKey);
 }
 
 function resolveSidecarScript(): string {

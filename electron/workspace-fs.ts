@@ -50,6 +50,10 @@ type ScopeParts = {
   displayName: string;
 };
 
+function isSharedGlobalScope(scope: WorkspaceScope): boolean {
+  return scope.kind === "global";
+}
+
 function getScopeParts(scope: WorkspaceScope): ScopeParts {
   const userData = app.getPath("userData");
   if (scope.kind === "project") {
@@ -97,6 +101,7 @@ function buildFolderName(parts: ScopeParts): string {
 
 export function resolveScopeRoot(scope: WorkspaceScope): string {
   const parts = getScopeParts(scope);
+  if (isSharedGlobalScope(scope)) return parts.parent;
   return path.join(parts.parent, buildFolderName(parts));
 }
 
@@ -125,6 +130,11 @@ async function findExistingFolderForId(parts: ScopeParts): Promise<string | null
 
 export async function ensureScopeRoot(scope: WorkspaceScope): Promise<string> {
   const parts = getScopeParts(scope);
+  if (isSharedGlobalScope(scope)) {
+    await fs.mkdir(parts.parent, { recursive: true });
+    await fs.mkdir(path.join(parts.parent, TMP_SUBDIR), { recursive: true });
+    return parts.parent;
+  }
   const desired = path.join(parts.parent, buildFolderName(parts));
   await fs.mkdir(parts.parent, { recursive: true });
 
