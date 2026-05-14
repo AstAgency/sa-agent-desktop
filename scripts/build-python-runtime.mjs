@@ -70,7 +70,7 @@ mkdirSync(pythonRoot, { recursive: true });
 execFileSync("tar", ["-xzf", tarballPath, "--strip-components=1", "-C", pythonRoot], { stdio: "inherit" });
 rmSync(tarballPath);
 
-const interpreter = resolveInterpreterPath(pythonRoot);
+const interpreter = resolveBundledInterpreterPath(pythonRoot);
 if (!existsSync(interpreter)) {
   throw new Error(`bundled interpreter not found at ${interpreter}`);
 }
@@ -79,7 +79,7 @@ console.log(`[python-runtime] creating venv at ${venvRoot}`);
 if (existsSync(venvRoot)) rmSync(venvRoot, { recursive: true, force: true });
 execFileSync(interpreter, ["-m", "venv", venvRoot], { stdio: "inherit" });
 
-const venvPython = resolveInterpreterPath(venvRoot);
+const venvPython = resolveVenvInterpreterPath(venvRoot);
 if (!existsSync(venvPython)) {
   throw new Error(`venv interpreter not found at ${venvPython}`);
 }
@@ -164,8 +164,13 @@ function buildTarballUrl() {
   return `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_PYTHON_VERSION}+${PBS_TAG}-${triple}.tar.gz`;
 }
 
-function resolveInterpreterPath(root) {
+function resolveBundledInterpreterPath(root) {
   if (process.platform === "win32") return join(root, "python.exe");
+  return join(root, "bin", "python3");
+}
+
+function resolveVenvInterpreterPath(root) {
+  if (process.platform === "win32") return join(root, "Scripts", "python.exe");
   return join(root, "bin", "python3");
 }
 
