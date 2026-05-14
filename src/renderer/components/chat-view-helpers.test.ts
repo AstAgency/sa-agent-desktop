@@ -4,6 +4,7 @@ import {
   buildComposerMessage,
   extractRenderedUserMessageParts,
   formatAttachmentsBlock,
+  getVisibleTurns,
   groupTurns,
   isAtBottom,
   nextAvailableAttachmentPath,
@@ -52,6 +53,34 @@ test("isAtBottom respects threshold and treats short content as pinned", () => {
   assert.equal(isAtBottom(0, 400, 400), true);
   assert.equal(isAtBottom(537, 400, 1000), true);
   assert.equal(isAtBottom(400, 400, 1000), false);
+});
+
+test("getVisibleTurns hides the trailing in-flight turn while live trace is rendering", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "read file" }),
+    message({
+      id: "a1",
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call-1",
+          type: "function",
+          function: { name: "read_file", arguments: "{\"path\":\"a.txt\"}" },
+        },
+      ],
+    }),
+    message({
+      id: "t1",
+      role: "tool",
+      content: "Read file a.txt (10 bytes). Content omitted from history.",
+      tool_call_id: "call-1",
+    }),
+  ]);
+
+  assert.equal(turns.length, 1);
+  assert.equal(getVisibleTurns(turns, true).length, 0);
+  assert.equal(getVisibleTurns(turns, false).length, 1);
 });
 
 test("formatAttachmentsBlock serializes attachments into the inline envelope", () => {

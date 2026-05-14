@@ -18,6 +18,8 @@
     "src/renderer/lib/auth-fetch.ts",
     "src/renderer/lib/auth-fetch.test.ts",
     "src/renderer/lib/types.ts",
+    "src/renderer/agent/transcript.ts",
+    "src/renderer/agent/transcript.test.ts",
     "src/renderer/agent/tool-result-summary.ts",
     "src/renderer/agent/tool-result-summary.test.ts",
     "src/renderer/components/chat-view-helpers.ts",

@@ -29,6 +29,18 @@ export type ChatTurn = {
   finalAssistant: Message | null;
 };
 
+export function getVisibleTurns(turns: ChatTurn[], sending: boolean): ChatTurn[] {
+  if (!sending || turns.length === 0) return turns;
+  const lastTurn = turns[turns.length - 1];
+  if (!lastTurn) return turns;
+  const isInFlightTurn =
+    lastTurn.finalAssistant === null &&
+    (lastTurn.userMessage !== null ||
+      lastTurn.reasoningMessages.length > 0 ||
+      lastTurn.traceMessages.length > 0);
+  return isInFlightTurn ? turns.slice(0, -1) : turns;
+}
+
 export function groupTurns(messages: Message[]): ChatTurn[] {
   const turns: ChatTurn[] = [];
   let current: ChatTurn | null = null;

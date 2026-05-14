@@ -21,6 +21,7 @@ import {
   buildHistoricalTrace,
   DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
   extractRenderedUserMessageParts,
+  getVisibleTurns,
   groupTurns,
   isAtBottom,
   MAX_COMBINED_MESSAGE_BYTES,
@@ -55,6 +56,7 @@ export function ChatView() {
   const lastStreamError = useClientState((state) => state.lastStreamError);
 
   const turns = useMemo(() => groupTurns(rawMessages), [rawMessages]);
+  const visibleTurns = useMemo(() => getVisibleTurns(turns, sending), [turns, sending]);
   const historyRef = useRef<HTMLDivElement | null>(null);
   const selectionKey =
     selection.kind === "session"
@@ -65,7 +67,7 @@ export function ChatView() {
   const { isPinnedToBottom, scrollToBottom } = useStickyBottom(historyRef, {
     selectionKey,
     sending,
-    contentVersion: `${turns.length}:${runtimeTrace.length}:${streamingFinalText.length}:${Number(Boolean(lastStreamError))}`,
+    contentVersion: `${visibleTurns.length}:${runtimeTrace.length}:${streamingFinalText.length}:${Number(Boolean(lastStreamError))}`,
   });
   const showLanding = selection.kind === "none";
 
@@ -107,7 +109,7 @@ export function ChatView() {
         ) : (
           <>
             {isLoading ? <em>{translate(language, "chat.loadingHistory")}</em> : null}
-            {turns.map((turn) => (
+            {visibleTurns.map((turn) => (
               <TurnView key={turn.key} turn={turn} language={language} />
             ))}
             {sending ? (
@@ -125,7 +127,7 @@ export function ChatView() {
               />
             ) : null}
             {!isLoading &&
-            turns.length === 0 &&
+            visibleTurns.length === 0 &&
             !sending &&
             !showError ? (
               <p style={{ color: "var(--text-muted)" }}>
@@ -135,6 +137,9 @@ export function ChatView() {
             ) : null}
           </>
         )}
+      </div>
+
+      <div className="chat-composer-shell">
         {!isPinnedToBottom ? (
           <button
             type="button"
@@ -147,24 +152,23 @@ export function ChatView() {
             <span>{translate(language, "chat.scrollToLatest")}</span>
           </button>
         ) : null}
+        <Composer
+          sending={sending}
+          agents={agents}
+          selectedAgentKey={selectedAgentKey}
+          onSelectAgent={setSelectedAgent}
+          language={language}
+          hideStop={showLanding}
+          onSubmitMessage={
+            showLanding
+              ? async (text, attachments) => {
+                  startNewGlobalSession();
+                  await sendMessage(text, attachments);
+                }
+              : undefined
+          }
+        />
       </div>
-
-      <Composer
-        sending={sending}
-        agents={agents}
-        selectedAgentKey={selectedAgentKey}
-        onSelectAgent={setSelectedAgent}
-        language={language}
-        hideStop={showLanding}
-        onSubmitMessage={
-          showLanding
-            ? async (text, attachments) => {
-                startNewGlobalSession();
-                await sendMessage(text, attachments);
-              }
-            : undefined
-        }
-      />
     </main>
   );
 }
@@ -548,15 +552,19 @@ function Composer(props: {
       setError(`Message exceeds ${MAX_COMBINED_MESSAGE_BYTES} bytes`);
       return;
     }
+    const previousValue = value;
+    const previousAttachments = attachments;
     try {
+      setValue("");
+      setAttachments([]);
       if (props.onSubmitMessage) {
         await props.onSubmitMessage(text, attachments);
       } else {
         await sendMessage(text, attachments);
       }
-      setValue("");
-      setAttachments([]);
     } catch (error) {
+      setValue(previousValue);
+      setAttachments(previousAttachments);
       setError(error instanceof Error ? error.message : String(error));
     }
   }

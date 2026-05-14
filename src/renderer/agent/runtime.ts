@@ -23,6 +23,7 @@ import {
   extractToolResultText,
   summarizeToolResultForHistory,
 } from "./tool-result-summary";
+import { transcriptToChatMessages, type EphemeralToolResult } from "./transcript";
 import type {
   Agent as AgentRecord,
   AgentRole,
@@ -140,6 +141,7 @@ export class SessionRuntime {
   private persistenceChain: Promise<unknown> = Promise.resolve();
   private activeRound: ActiveRound | null = null;
   private roundIndex = 0;
+  private currentTurnToolResults: EphemeralToolResult[] = [];
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
@@ -205,6 +207,7 @@ export class SessionRuntime {
     this.persistedMessageIds.add(userMessage.id);
     this.roundIndex = 0;
     this.activeRound = null;
+    this.currentTurnToolResults = [];
     this.state = {
       ...this.state,
       messages: [...this.state.messages, userMessage],
@@ -281,6 +284,16 @@ export class SessionRuntime {
     if (message.role === "user") return;
     if (message.role === "toolResult") {
       const isError = (message as { isError?: boolean }).isError === true;
+      const rawText = extractToolResultText(message as unknown as {
+        content?: Array<{ type: string; text?: string }>;
+      });
+      if (rawText.trim().length > 0) {
+        this.currentTurnToolResults.push({
+          toolCallId: (message as { toolCallId?: string }).toolCallId ?? "",
+          toolName: (message as { toolName?: string }).toolName ?? "tool",
+          content: rawText,
+        });
+      }
       const text = summarizeToolResultForHistory(message as unknown as {
         toolName?: string;
         isError?: boolean;
@@ -453,7 +466,10 @@ export class SessionRuntime {
           : [];
 
       const liveMessages = getLiveMessages(this.state.messages, this.state.summaries);
-      const transcriptForLlm = transcriptToChatMessages(liveMessages);
+      const transcriptForLlm = transcriptToChatMessages(
+        liveMessages,
+        this.currentTurnToolResults,
+      );
       const promptMessages: ChatMessage[] = buildPrompt({
         agent: this.input.agent,
         agentSkills: this.input.agentSkills ?? [],
@@ -712,61 +728,6 @@ function hydrateAgentMessages(messages: Message[]): PiMessage[] {
     }
   }
   return result;
-}
-
-/**
- * Convert the persisted transcript to the shape we send to /v1/chat/completions.
- *
- * Contract (deliberately different from OpenAI's strict tool-calls protocol):
- *   - user / assistant messages flow through as plain text
- *   - assistant messages with empty content are skipped (their tool_calls
- *     are recorded locally but not exposed to the LLM)
- *   - tool_calls metadata is stripped from outgoing assistant messages
- *   - tool result messages are folded into synthetic user messages of the form
- *
- *       <tool_result name="...">{content}</tool_result>
- *
- *     This sidesteps OpenAI's "tool must follow tool_calls" pairing rule and
- *     drives the LLM to interpret the tool output for the user in its next turn.
- */
-function transcriptToChatMessages(messages: Message[]): ChatMessage[] {
-  const toolNameById = new Map<string, string>();
-  for (const message of messages) {
-    if (message.role !== "assistant" || !message.tool_calls) continue;
-    for (const call of message.tool_calls) {
-      if (call?.id && call.function?.name) {
-        toolNameById.set(call.id, call.function.name);
-      }
-    }
-  }
-
-  const result: ChatMessage[] = [];
-  for (const message of messages) {
-    if (message.role === "user") {
-      if (message.content.length === 0) continue;
-      result.push({ role: "user", content: message.content });
-      continue;
-    }
-    if (message.role === "assistant") {
-      if (message.content.trim().length === 0) continue;
-      result.push({ role: "assistant", content: message.content });
-      continue;
-    }
-    if (message.role === "tool") {
-      if (message.content.trim().length === 0) continue;
-      const toolName =
-        (message.tool_call_id ? toolNameById.get(message.tool_call_id) : undefined) ?? "tool";
-      result.push({
-        role: "user",
-        content: `<tool_result name="${escapeAttribute(toolName)}">\n${message.content}\n</tool_result>`,
-      });
-    }
-  }
-  return result;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 function toolsToOpenAIDefinitions(tools: AgentTool[]): OpenAIToolDefinition[] {
