@@ -23,16 +23,11 @@ export default async function prepareMacBundle(context) {
 
 function applyAdHocSignatures(appPath) {
   const { files, bundles } = collectSignatureTargets(appPath);
+  const orderedTargets = planAdHocSignatureOrder(appPath, files, bundles);
 
-  for (const target of files) {
+  for (const target of orderedTargets) {
     signAdHoc(target);
   }
-
-  for (const target of bundles) {
-    signAdHoc(target);
-  }
-
-  signAdHoc(appPath);
 }
 
 function collectSignatureTargets(appPath) {
@@ -79,6 +74,13 @@ export function isCodeFile(path) {
   if (!stats.isFile()) return false;
   if (path.endsWith(".dylib") || path.endsWith(".so") || path.endsWith(".node")) return true;
   return (stats.mode & 0o111) !== 0;
+}
+
+export function planAdHocSignatureOrder(appPath, files, bundles) {
+  const appExecutable = join(appPath, "Contents", "MacOS", basename(appPath, ".app"));
+  const regularFiles = files.filter((path) => path !== appExecutable);
+  const topLevelExecutables = files.filter((path) => path === appExecutable);
+  return [...regularFiles, ...bundles, ...topLevelExecutables, appPath];
 }
 
 function depth(path) {
