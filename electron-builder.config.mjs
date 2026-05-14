@@ -64,16 +64,11 @@ export default {
   },
   dmg: {
     artifactName: commonArtifactName,
+    size: 8192,
   },
   win: {
-    target: ["nsis"],
+    target: ["zip"],
     icon: "assets/windows/icon.ico",
-    artifactName: commonArtifactName,
-  },
-  nsis: {
-    oneClick: false,
-    perMachine: false,
-    allowToChangeInstallationDirectory: true,
     artifactName: commonArtifactName,
   },
   linux: {
