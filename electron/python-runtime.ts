@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 
@@ -73,12 +73,6 @@ export class PythonRuntime {
       const error = new Error(`Python sidecar script not found at ${this.paths.serverScript}`);
       this.status = { ready: false, model_id: null, dimensions: null, error: error.message };
       throw error;
-    }
-    try {
-      repairVenvConfig(this.paths.runtimeRoot);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[python-runtime] failed to repair pyvenv.cfg: ${message}\n`);
     }
 
     const child = spawn(this.paths.interpreter, [this.paths.serverScript], {
@@ -210,11 +204,11 @@ export class PythonRuntime {
 export function resolvePythonRuntimePaths(): PythonRuntimePaths {
   const platformKey = resolvePlatformKey();
   const runtimeRoot = resolveRuntimeRoot(platformKey);
-  const venvRoot = path.join(runtimeRoot, "venv");
+  const pythonRoot = path.join(runtimeRoot, "python");
   const interpreter =
     process.platform === "win32"
-      ? path.join(venvRoot, "Scripts", "python.exe")
-      : path.join(venvRoot, "bin", "python3");
+      ? path.join(pythonRoot, "python.exe")
+      : path.join(pythonRoot, "bin", "python3");
   const serverScript = resolveSidecarScript();
   const hfCacheDir = path.join(runtimeRoot, "hf-cache");
   return { interpreter, serverScript, hfCacheDir, runtimeRoot };
@@ -225,29 +219,6 @@ function resolveRuntimeRoot(platformKey: string): string {
     ? path.join(process.resourcesPath, "python-runtime", platformKey)
     : path.join(app.getAppPath(), "resources", "python-runtime", platformKey);
   return resourcesPath;
-}
-
-// The venv is created on the build machine; its pyvenv.cfg `home` line
-// contains that machine's absolute path to the bundled interpreter. After the
-// app is packaged and installed elsewhere, that path no longer exists and
-// CPython cannot locate its stdlib. Rewrite `home` to the actual location on
-// the current machine. Idempotent: no-op when the path is already correct.
-function repairVenvConfig(runtimeRoot: string): void {
-  const pyvenvCfg = path.join(runtimeRoot, "venv", "pyvenv.cfg");
-  if (!existsSync(pyvenvCfg)) return;
-  const bundledPythonHome =
-    process.platform === "win32"
-      ? path.join(runtimeRoot, "python")
-      : path.join(runtimeRoot, "python", "bin");
-  if (!existsSync(bundledPythonHome)) return;
-  const content = readFileSync(pyvenvCfg, "utf8");
-  const homeLine = /^home\s*=\s*(.*)$/m;
-  const match = content.match(homeLine);
-  if (!match) return;
-  const currentHome = match[1].trim();
-  if (currentHome === bundledPythonHome) return;
-  const next = content.replace(homeLine, `home = ${bundledPythonHome}`);
-  writeFileSync(pyvenvCfg, next, "utf8");
 }
 
 function resolveSidecarScript(): string {

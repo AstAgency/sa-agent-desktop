@@ -1,25 +1,31 @@
 #!/usr/bin/env node
 // Builds the bundled python runtime for the current platform.
-// Output: resources/python-runtime/<platform>/{python,venv,hf-cache}
+// Output: resources/python-runtime/<platform>/{python,hf-cache}
 //
 // Steps:
 //   1) Download python-build-standalone tarball for current platform/arch.
 //   2) Extract it under resources/python-runtime/<platform>/python.
-//   3) Create a venv at resources/python-runtime/<platform>/venv that uses
-//      the bundled interpreter.
-//   4) pip install python-sidecar/requirements.txt into that venv.
-//   5) Shallow-clone SearXNG at a pinned commit, install its runtime
+//   3) pip install python-sidecar/requirements.txt into the standalone
+//      interpreter's site-packages.
+//   4) Shallow-clone SearXNG at a pinned commit, install its runtime
 //      deps, then install the working tree with --no-build-isolation.
 //      (SearXNG's setup.py touches msgspec at import time, so a plain
 //      `pip install git+...` fails build-isolation requirements.)
-//   6) Pre-download the intfloat/multilingual-e5-large model weights into
+//   5) Pre-download the intfloat/multilingual-e5-large model weights into
 //      resources/python-runtime/<platform>/hf-cache so first run is offline.
+//
+// We intentionally do NOT create a venv: python-build-standalone is already
+// fully relocatable, while venvs created from it embed the build machine's
+// absolute path in pyvenv.cfg and (on Linux) break the interpreter's
+// $ORIGIN-relative RPATH the moment `python3` is copied out of `python/bin/`.
+// Installing straight into the standalone interpreter keeps the tree movable
+// across machines and OSes.
 //
 // The script is idempotent for a given target: if the runtime already exists
 // and ``SA_AGENT_REBUILD_PYTHON=1`` is not set, it does nothing.
 
 import { execFileSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
@@ -48,15 +54,19 @@ const SEARXNG_COMMIT =
 const platformKey = resolvePlatformKey();
 const runtimeRoot = join(projectRoot, "resources", "python-runtime", platformKey);
 const pythonRoot = join(runtimeRoot, "python");
-const venvRoot = join(runtimeRoot, "venv");
 const hfCacheRoot = join(runtimeRoot, "hf-cache");
 
-if (existsSync(venvRoot) && existsSync(hfCacheRoot) && process.env.SA_AGENT_REBUILD_PYTHON !== "1") {
+if (existsSync(pythonRoot) && existsSync(hfCacheRoot) && process.env.SA_AGENT_REBUILD_PYTHON !== "1") {
   console.log(`python runtime already exists at ${runtimeRoot}, skipping (set SA_AGENT_REBUILD_PYTHON=1 to force).`);
   process.exit(0);
 }
 
 mkdirSync(runtimeRoot, { recursive: true });
+
+// Clean up a venv left over from older builds so it does not get shipped
+// alongside the new layout.
+const legacyVenv = join(runtimeRoot, "venv");
+if (existsSync(legacyVenv)) rmSync(legacyVenv, { recursive: true, force: true });
 
 const tarballUrl = buildTarballUrl();
 const tarballPath = join(runtimeRoot, "python-build-standalone.tar.gz");
@@ -75,23 +85,12 @@ if (!existsSync(interpreter)) {
   throw new Error(`bundled interpreter not found at ${interpreter}`);
 }
 
-console.log(`[python-runtime] creating venv at ${venvRoot}`);
-if (existsSync(venvRoot)) rmSync(venvRoot, { recursive: true, force: true });
-// --copies: avoid absolute symlinks to the build machine's interpreter, so
-// the venv stays valid after packaging into another machine's app bundle.
-execFileSync(interpreter, ["-m", "venv", "--copies", venvRoot], { stdio: "inherit" });
-
-const venvPython = resolveVenvInterpreterPath(venvRoot);
-if (!existsSync(venvPython)) {
-  throw new Error(`venv interpreter not found at ${venvPython}`);
-}
-
 console.log(`[python-runtime] upgrading pip`);
-execFileSync(venvPython, ["-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"], { stdio: "inherit" });
+execFileSync(interpreter, ["-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"], { stdio: "inherit" });
 
 console.log(`[python-runtime] installing requirements`);
 execFileSync(
-  venvPython,
+  interpreter,
   ["-m", "pip", "install", "-r", join(projectRoot, "python-sidecar", "requirements.txt")],
   { stdio: "inherit" },
 );
@@ -111,14 +110,14 @@ execFileSync("git", ["-C", searxngSrc, "checkout", "--quiet", "FETCH_HEAD"], { s
 
 console.log(`[python-runtime] installing searxng runtime deps`);
 execFileSync(
-  venvPython,
+  interpreter,
   ["-m", "pip", "install", "-r", join(searxngSrc, "requirements.txt")],
   { stdio: "inherit" },
 );
 
 console.log(`[python-runtime] installing searxng`);
 execFileSync(
-  venvPython,
+  interpreter,
   ["-m", "pip", "install", "--no-build-isolation", searxngSrc],
   { stdio: "inherit" },
 );
@@ -128,7 +127,7 @@ rmSync(searxngSrc, { recursive: true, force: true });
 console.log(`[python-runtime] pre-downloading model weights`);
 mkdirSync(hfCacheRoot, { recursive: true });
 execFileSync(
-  venvPython,
+  interpreter,
   [
     "-c",
     [
@@ -171,11 +170,6 @@ function resolveBundledInterpreterPath(root) {
   return join(root, "bin", "python3");
 }
 
-function resolveVenvInterpreterPath(root) {
-  if (process.platform === "win32") return join(root, "Scripts", "python.exe");
-  return join(root, "bin", "python3");
-}
-
 async function download(url, destination) {
   const response = await fetch(url);
   if (!response.ok || !response.body) {
@@ -183,6 +177,3 @@ async function download(url, destination) {
   }
   await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
 }
-
-// Avoid noisy unused warnings from imports we keep for clarity.
-void readFileSync;
