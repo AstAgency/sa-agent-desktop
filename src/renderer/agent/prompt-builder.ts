@@ -7,18 +7,22 @@ import type {
   Project,
   Summary,
 } from "../lib/types";
+import type { AgentRole } from "../lib/types";
 import {
   CAPABILITIES_PROMPT,
   COMPLETION_POLICY_PROMPT,
   EXECUTION_DISCIPLINE_PROMPT,
+  ROLES_POLICY_PROMPT,
   SKILLS_POLICY_PROMPT,
   buildOrchestrationBlock,
+  buildRolesBlock,
   buildSkillsBlock,
 } from "./prompts";
 
 export type PromptBuildInput = {
   agent: Agent | null;
   agentSkills?: AgentSkill[];
+  agentRoles?: AgentRole[];
   profile: Profile;
   project: Project | null;
   relevantSummaries: Summary[];
@@ -45,6 +49,12 @@ export function buildPrompt(input: PromptBuildInput): ChatMessage[] {
   if (skills.length > 0) {
     systemParts.push(SKILLS_POLICY_PROMPT);
     systemParts.push(buildSkillsBlock(skills));
+  }
+
+  const roles = input.agentRoles ?? [];
+  if (roles.length > 0) {
+    systemParts.push(ROLES_POLICY_PROMPT);
+    systemParts.push(buildRolesBlock(roles));
   }
 
   const orchestrationBlock = buildOrchestrationBlock(input.agent?.orchestration_protocol ?? null);

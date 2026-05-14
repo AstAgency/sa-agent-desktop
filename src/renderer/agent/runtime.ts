@@ -21,6 +21,7 @@ import { maybeSummarize } from "./summarizer";
 import { buildWorkspaceTools, type WorkspaceToolActions } from "./tools";
 import type {
   Agent as AgentRecord,
+  AgentRole,
   AgentSkill,
   ChatMessage,
   Message,
@@ -54,6 +55,7 @@ export type SessionRuntimeInput = {
   project: Project | null;
   agent: AgentRecord | null;
   agentSkills?: AgentSkill[];
+  agentRoles?: AgentRole[];
   messages: Message[];
   summaries: Summary[];
   toolActions: WorkspaceToolActions;
@@ -137,7 +139,14 @@ export class SessionRuntime {
 
   constructor(private readonly input: SessionRuntimeInput) {
     this.model = input.model ?? DEFAULT_MODEL;
-    this.tools = buildWorkspaceTools(input.scope, input.toolActions);
+    const skills = input.agentSkills ?? [];
+    const roles = input.agentRoles ?? [];
+    this.tools = buildWorkspaceTools(input.scope, input.toolActions, {
+      findSkill: (name) => skills.find((skill) => skill.name === name) ?? null,
+      findRole: (name) => roles.find((role) => role.name === name) ?? null,
+      listSkillNames: () => skills.map((skill) => skill.name),
+      listRoleNames: () => roles.map((role) => role.name),
+    });
     this.state = {
       messages: [...input.messages],
       summaries: [...input.summaries],
@@ -434,6 +443,7 @@ export class SessionRuntime {
       const promptMessages: ChatMessage[] = buildPrompt({
         agent: this.input.agent,
         agentSkills: this.input.agentSkills ?? [],
+        agentRoles: this.input.agentRoles ?? [],
         profile: this.input.profile,
         project: this.input.project,
         relevantSummaries,

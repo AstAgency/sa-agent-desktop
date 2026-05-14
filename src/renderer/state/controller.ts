@@ -4,6 +4,7 @@ import {
   createSession,
   deleteProject as deleteProjectRequest,
   deleteSession as deleteSessionRequest,
+  getAgentRoles,
   getAgentSkills,
   getAgents,
   getAllSessionMessages,
@@ -21,8 +22,9 @@ import {
 } from "../lib/api";
 import { getBridge } from "../lib/bridge";
 import { translate } from "../lib/i18n";
-import type { AgentSkill, Message, Session, Summary, WorkspaceScope } from "../lib/types";
+import type { AgentRole, AgentSkill, Message, Session, Summary, WorkspaceScope } from "../lib/types";
 import { SessionRuntime, type SessionRuntimeState } from "../agent/runtime";
+import { createAgentContentCache } from "./agent-content-cache";
 import {
   getState,
   setBilling,
@@ -36,17 +38,30 @@ const DISPLAY_NAME_MAX = 30;
 
 const runtimeBySession = new Map<string, SessionRuntime>();
 const runtimeUnsubscribes = new Map<string, () => void>();
-const agentSkillsCache = new Map<string, AgentSkill[]>();
+const agentContentCache = createAgentContentCache();
 
-async function loadAgentSkills(agentId: string): Promise<AgentSkill[]> {
-  const cached = agentSkillsCache.get(agentId);
+async function loadAgentSkills(agentKey: string): Promise<AgentSkill[]> {
+  const cached = agentContentCache.getSkillsList(agentKey);
   if (cached) return cached;
   try {
-    const skills = await getAgentSkills(agentId);
-    agentSkillsCache.set(agentId, skills);
+    const skills = await getAgentSkills(agentKey);
+    agentContentCache.setSkills(agentKey, skills);
     return skills;
   } catch (error) {
     console.warn("[controller] failed to load agent skills", error);
+    return [];
+  }
+}
+
+async function loadAgentRoles(agentKey: string): Promise<AgentRole[]> {
+  const cached = agentContentCache.getRolesList(agentKey);
+  if (cached) return cached;
+  try {
+    const roles = await getAgentRoles(agentKey);
+    agentContentCache.setRoles(agentKey, roles);
+    return roles;
+  } catch (error) {
+    console.warn("[controller] failed to load agent roles", error);
     return [];
   }
 }
@@ -468,7 +483,9 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
       };
   const messages = state.messagesBySession[session.id] ?? [];
   const summaries = state.summariesBySession[session.id] ?? [];
-  const agentSkills = agent ? await loadAgentSkills(agent.id) : [];
+  const [agentSkills, agentRoles] = agent
+    ? await Promise.all([loadAgentSkills(agent.id), loadAgentRoles(agent.id)])
+    : [[] as AgentSkill[], [] as AgentRole[]];
 
   const runtime = new SessionRuntime({
     sessionId: session.id,
@@ -477,6 +494,7 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     project,
     agent,
     agentSkills,
+    agentRoles,
     messages,
     summaries,
     toolActions: {
