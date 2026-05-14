@@ -48,7 +48,7 @@ export default {
       ]
     : [],
   mac: {
-    target: ["dmg", "zip"],
+    target: ["zip"],
     category: "public.app-category.developer-tools",
     icon: "assets/macos/icon.icns",
     identity: hasMacSigningIdentity ? undefined : null,
@@ -62,22 +62,15 @@ export default {
       : {}),
     artifactName: commonArtifactName,
   },
-  dmg: {
-    artifactName: commonArtifactName,
-    size: 8192,
-  },
   win: {
     target: ["zip"],
     icon: "assets/windows/icon.ico",
     artifactName: commonArtifactName,
   },
   linux: {
-    target: ["AppImage"],
+    target: ["tar.gz", "deb"],
     category: "Utility",
     icon: "assets/icon.png",
-    artifactName: commonArtifactName,
-  },
-  appImage: {
     artifactName: commonArtifactName,
   },
 };
