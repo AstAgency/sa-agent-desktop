@@ -1,7 +1,7 @@
 {
   "name": "sa-agent-desktop",
   "description": "Desktop client for SA-Agent.",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
