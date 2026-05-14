@@ -15,6 +15,7 @@ export type SearxngStatus =
   | { state: "stopped" }
   | { state: "starting" }
   | { state: "running"; port: number; pid: number | null }
+  | { state: "unsupported"; reason: string }
   | { state: "failed"; error: string };
 
 type ResolvedPaths = {
@@ -36,6 +37,12 @@ export class SearxngRuntime {
   }
 
   getStatus(): SearxngStatus {
+    if (process.platform === "win32") {
+      return {
+        state: "unsupported",
+        reason: "Bundled SearXNG is currently unsupported on Windows builds.",
+      };
+    }
     return this.statusState;
   }
 
@@ -44,6 +51,11 @@ export class SearxngRuntime {
   }
 
   async ensureRunning(): Promise<{ port: number }> {
+    if (process.platform === "win32") {
+      const reason = "Bundled SearXNG is currently unsupported on Windows builds.";
+      this.statusState = { state: "unsupported", reason };
+      throw new Error(reason);
+    }
     if (this.process && this.port !== null) {
       return { port: this.port };
     }

@@ -25,7 +25,7 @@ jobs:
             label: macOS (Apple Silicon)
             artifact_name: installers-macos-arm64
             artifact_glob: release/*.dmg
-          - os: macos-13
+          - os: macos-15-intel
             label: macOS (Intel)
             artifact_name: installers-macos-x64
             artifact_glob: release/*.dmg
@@ -33,7 +33,7 @@ jobs:
             label: Linux
             artifact_name: installers-linux
             artifact_glob: release/*.AppImage
-          - os: windows-latest
+          - os: windows-2025
             label: Windows
             artifact_name: installers-windows
             artifact_glob: release/*.exe

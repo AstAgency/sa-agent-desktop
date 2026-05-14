@@ -95,34 +95,38 @@ execFileSync(
   { stdio: "inherit" },
 );
 
-console.log(`[python-runtime] cloning searxng@${SEARXNG_COMMIT.slice(0, 12)}`);
-const searxngSrc = join(runtimeRoot, "searxng-src");
-if (existsSync(searxngSrc)) rmSync(searxngSrc, { recursive: true, force: true });
-mkdirSync(searxngSrc, { recursive: true });
-execFileSync("git", ["init", "--quiet", searxngSrc], { stdio: "inherit" });
-execFileSync("git", ["-C", searxngSrc, "remote", "add", "origin", SEARXNG_REPO], { stdio: "inherit" });
-execFileSync(
-  "git",
-  ["-C", searxngSrc, "fetch", "--depth=1", "--quiet", "origin", SEARXNG_COMMIT],
-  { stdio: "inherit" },
-);
-execFileSync("git", ["-C", searxngSrc, "checkout", "--quiet", "FETCH_HEAD"], { stdio: "inherit" });
+if (process.platform === "win32") {
+  console.log("[python-runtime] skipping bundled searxng on Windows (upstream repo contains paths incompatible with NTFS)");
+} else {
+  console.log(`[python-runtime] cloning searxng@${SEARXNG_COMMIT.slice(0, 12)}`);
+  const searxngSrc = join(runtimeRoot, "searxng-src");
+  if (existsSync(searxngSrc)) rmSync(searxngSrc, { recursive: true, force: true });
+  mkdirSync(searxngSrc, { recursive: true });
+  execFileSync("git", ["init", "--quiet", searxngSrc], { stdio: "inherit" });
+  execFileSync("git", ["-C", searxngSrc, "remote", "add", "origin", SEARXNG_REPO], { stdio: "inherit" });
+  execFileSync(
+    "git",
+    ["-C", searxngSrc, "fetch", "--depth=1", "--quiet", "origin", SEARXNG_COMMIT],
+    { stdio: "inherit" },
+  );
+  execFileSync("git", ["-C", searxngSrc, "checkout", "--quiet", "FETCH_HEAD"], { stdio: "inherit" });
 
-console.log(`[python-runtime] installing searxng runtime deps`);
-execFileSync(
-  interpreter,
-  ["-m", "pip", "install", "-r", join(searxngSrc, "requirements.txt")],
-  { stdio: "inherit" },
-);
+  console.log(`[python-runtime] installing searxng runtime deps`);
+  execFileSync(
+    interpreter,
+    ["-m", "pip", "install", "-r", join(searxngSrc, "requirements.txt")],
+    { stdio: "inherit" },
+  );
 
-console.log(`[python-runtime] installing searxng`);
-execFileSync(
-  interpreter,
-  ["-m", "pip", "install", "--no-build-isolation", searxngSrc],
-  { stdio: "inherit" },
-);
+  console.log(`[python-runtime] installing searxng`);
+  execFileSync(
+    interpreter,
+    ["-m", "pip", "install", "--no-build-isolation", searxngSrc],
+    { stdio: "inherit" },
+  );
 
-rmSync(searxngSrc, { recursive: true, force: true });
+  rmSync(searxngSrc, { recursive: true, force: true });
+}
 
 console.log(`[python-runtime] pre-downloading model weights`);
 mkdirSync(hfCacheRoot, { recursive: true });

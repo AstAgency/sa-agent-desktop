@@ -262,4 +262,5 @@ export type SearchStatus =
   | { state: "stopped" }
   | { state: "starting" }
   | { state: "running"; port: number; pid: number | null }
+  | { state: "unsupported"; reason: string }
   | { state: "failed"; error: string };

@@ -68,7 +68,11 @@ export function UserProfileModal() {
   }
 
   const statusBadge = renderStatusBadge(searchStatus, language);
-  const canStart = searchStatus.state !== "running" && searchStatus.state !== "starting" && !searchBusy;
+  const canStart =
+    searchStatus.state !== "running" &&
+    searchStatus.state !== "starting" &&
+    searchStatus.state !== "unsupported" &&
+    !searchBusy;
 
   return (
     <div
@@ -210,6 +214,10 @@ function renderStatusBadge(status: SearchStatus, language: AppLanguage): string 
       return translate(language, "profile.search.status.running", { port: String(status.port) });
     case "starting":
       return translate(language, "profile.search.status.starting");
+    case "unsupported":
+      return translate(language, "profile.search.status.unsupported", {
+        reason: status.reason,
+      });
     case "failed":
       return translate(language, "profile.search.status.failed", { error: status.error });
     case "stopped":
