@@ -1,3 +1,5 @@
+[![Release](https://github.com/AstAgency/sa-agent-desktop/actions/workflows/release.yml/badge.svg)](https://github.com/AstAgency/sa-agent-desktop/actions/workflows/release.yml)
+
 # sa-agent-desktop
 
 Desktop client for SA-Agent. Implements the contract from

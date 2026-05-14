@@ -69,13 +69,16 @@ function isBundleTarget(path) {
   return name === "Electron Framework" || name === "Squirrel" || name === "Mantle" || name === "ReactiveObjC";
 }
 
-function isCodeFile(path) {
-  if (path.endsWith(".dylib") || path.endsWith(".so") || path.endsWith(".node")) return true;
+export function isCodeFile(path) {
+  let stats;
   try {
-    return (statSync(path).mode & 0o111) !== 0;
+    stats = statSync(path);
   } catch {
     return false;
   }
+  if (!stats.isFile()) return false;
+  if (path.endsWith(".dylib") || path.endsWith(".so") || path.endsWith(".node")) return true;
+  return (stats.mode & 0o111) !== 0;
 }
 
 function depth(path) {
