@@ -21,24 +21,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            label: macOS
-            artifact_name: installers-macos
+          - os: macos-14
+            label: macOS (Apple Silicon)
+            artifact_name: installers-macos-arm64
+            artifact_glob: release/*.dmg
+          - os: macos-13
+            label: macOS (Intel)
+            artifact_name: installers-macos-x64
             artifact_glob: release/*.dmg
           - os: ubuntu-latest
             label: Linux
             artifact_name: installers-linux
             artifact_glob: release/*.AppImage
-          # Re-enable Windows after the bundled Python/SearXNG runtime is
-          # verified on GitHub-hosted Windows runners.
-          # - os: windows-latest
-          #   label: Windows
-          #   artifact_name: installers-windows
-          #   artifact_glob: release/*.exe
+          - os: windows-latest
+            label: Windows
+            artifact_name: installers-windows
+            artifact_glob: release/*.exe
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Enable long paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+            -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force | Out-Null
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -109,4 +119,4 @@ jobs:
           files: |
             release-artifacts/*.dmg
             release-artifacts/*.AppImage
-            # release-artifacts/*.exe
+            release-artifacts/*.exe
