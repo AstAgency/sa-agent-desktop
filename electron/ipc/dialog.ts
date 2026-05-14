@@ -14,6 +14,8 @@ export type DialogOpenFileResult = {
 
 export const MAX_DIALOG_FILE_BYTES = 1 * 1024 * 1024;
 export const MAX_DIALOG_TOTAL_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS =
+  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt";
 
 const TEXT_MIME_BY_EXTENSION: Record<string, string> = {
   ".css": "text/css",
@@ -74,6 +76,37 @@ export function inferMime(name: string, kind: "text" | "binary"): string {
   return kind === "text" ? "text/plain" : "application/octet-stream";
 }
 
+export function parseAllowedAttachmentExtensions(raw: string | undefined | null): Set<string> {
+  const source = raw && raw.trim().length > 0 ? raw : DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS;
+  return new Set(
+    source
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part.length > 0)
+      .map((part) => (part.startsWith(".") ? part : `.${part}`)),
+  );
+}
+
+export function validateAllowedAttachmentExtension(
+  fileName: string,
+  allowedExtensions: ReadonlySet<string>,
+): string | null {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension.length === 0 || !allowedExtensions.has(extension)) {
+    return `${fileName} has unsupported file type`;
+  }
+  return null;
+}
+
+export function buildDialogFileFilters(allowedExtensions: ReadonlySet<string>) {
+  return [
+    {
+      name: "Allowed attachments",
+      extensions: [...allowedExtensions].map((extension) => extension.slice(1)),
+    },
+  ];
+}
+
 export function validateDialogSelection(files: Array<{ name: string; size: number }>): string | null {
   const total = files.reduce((sum, file) => sum + file.size, 0);
   const oversized = files.find((file) => file.size > MAX_DIALOG_FILE_BYTES);
@@ -87,12 +120,19 @@ export function validateDialogSelection(files: Array<{ name: string; size: numbe
 }
 
 export async function readDialogFiles(filePaths: string[]): Promise<DialogOpenFileResult[]> {
+  const allowedExtensions = parseAllowedAttachmentExtensions(
+    process.env.VITE_ATTACHMENT_ALLOWED_EXTENSIONS,
+  );
   const stats = await Promise.all(
     filePaths.map(async (filePath) => {
       const stat = await fs.stat(filePath);
       return { path: filePath, name: path.basename(filePath), size: stat.size };
     }),
   );
+  for (const entry of stats) {
+    const extensionError = validateAllowedAttachmentExtension(entry.name, allowedExtensions);
+    if (extensionError) throw new Error(extensionError);
+  }
   const validationError = validateDialogSelection(stats);
   if (validationError) throw new Error(validationError);
 
@@ -114,8 +154,12 @@ export async function readDialogFiles(filePaths: string[]): Promise<DialogOpenFi
 export async function openFilesDialog(
   window = BrowserWindow.getFocusedWindow() ?? undefined,
 ): Promise<DialogOpenFileResult[]> {
+  const allowedExtensions = parseAllowedAttachmentExtensions(
+    process.env.VITE_ATTACHMENT_ALLOWED_EXTENSIONS,
+  );
   const options = {
     properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
+    filters: buildDialogFileFilters(allowedExtensions),
   };
   const result = window
     ? await dialog.showOpenDialog(window, options)

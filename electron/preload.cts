@@ -91,6 +91,9 @@ contextBridge.exposeInMainWorld("saAgent", {
     write(scope: WorkspaceScope, path: string, content: string): Promise<{ path: string }> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-write", scope, path, content));
     },
+    writeBinary(scope: WorkspaceScope, path: string, base64: string): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-write-binary", scope, path, base64));
+    },
     edit(
       scope: WorkspaceScope,
       path: string,

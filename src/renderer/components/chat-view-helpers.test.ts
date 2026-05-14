@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildComposerMessage,
+  extractRenderedUserMessageParts,
   formatAttachmentsBlock,
   groupTurns,
   isAtBottom,
+  nextAvailableAttachmentPath,
+  parseAllowedAttachmentExtensions,
+  type PersistedAttachment,
+  validateAttachmentTypes,
   type ComposerAttachment,
 } from "./chat-view-helpers.js";
 import type { Message } from "../lib/types.js";
@@ -50,27 +55,84 @@ test("isAtBottom respects threshold and treats short content as pinned", () => {
 });
 
 test("formatAttachmentsBlock serializes attachments into the inline envelope", () => {
-  const attachments: ComposerAttachment[] = [
+  const attachments: PersistedAttachment[] = [
     {
       name: "notes.txt",
       size: 11,
       mime: "text/plain",
       kind: "text",
-      content: "hello world",
+      workspacePath: "notes.txt",
     },
     {
-      name: "image.bin",
+      name: "image.pdf",
       size: 4,
-      mime: "application/octet-stream",
+      mime: "application/pdf",
       kind: "binary",
-      content: "AQIDBA==",
+      workspacePath: "image (2).pdf",
     },
   ];
 
   const block = formatAttachmentsBlock(attachments);
   assert.match(block, /^<attachments>/);
-  assert.match(block, /=== notes\.txt \(11 bytes, text\/plain\) ===/);
-  assert.match(block, /=== image\.bin \(4 bytes, binary base64\) ===/);
+  assert.match(block, /=== notes\.txt \(11 bytes, text\/plain\) :: workspace_path="notes\.txt" ===/);
+  assert.match(block, /=== image\.pdf \(4 bytes, application\/pdf\) :: workspace_path="image \(2\)\.pdf" ===/);
   assert.match(block, /<\/attachments>$/);
   assert.equal(buildComposerMessage("please inspect", attachments).startsWith(block), true);
+});
+
+test("validateAttachmentTypes enforces env-configured extension allowlist", () => {
+  const allowed = parseAllowedAttachmentExtensions(".pdf, docx, txt, md");
+  assert.equal(
+    validateAttachmentTypes(
+      [
+        {
+          name: "brief.pdf",
+          size: 10,
+          mime: "application/pdf",
+          kind: "binary",
+          content: "AA==",
+        },
+      ],
+      allowed,
+    ),
+    null,
+  );
+  assert.match(
+    validateAttachmentTypes(
+      [
+        {
+          name: "archive.zip",
+          size: 10,
+          mime: "application/zip",
+          kind: "binary",
+          content: "AA==",
+        },
+      ],
+      allowed,
+    ) ?? "",
+    /archive\.zip has unsupported file type/,
+  );
+});
+
+test("extractRenderedUserMessageParts hides attachment control text and keeps user text", () => {
+  const content = buildComposerMessage("Проверь квитанцию", [
+    {
+      name: "Квитанция.pdf",
+      size: 61294,
+      mime: "application/pdf",
+      kind: "binary",
+      workspacePath: "Квитанция (2).pdf",
+    },
+  ]);
+
+  const rendered = extractRenderedUserMessageParts(content);
+  assert.equal(rendered.text, "Проверь квитанцию");
+  assert.equal(rendered.attachments.length, 1);
+  assert.equal(rendered.attachments[0]?.workspacePath, "Квитанция (2).pdf");
+  assert.equal(rendered.attachments[0]?.name, "Квитанция.pdf");
+});
+
+test("nextAvailableAttachmentPath appends numeric suffix for collisions", () => {
+  const next = nextAvailableAttachmentPath("Квитанция.pdf", new Set(["Квитанция.pdf", "Квитанция (2).pdf"]));
+  assert.equal(next, "Квитанция (3).pdf");
 });

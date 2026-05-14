@@ -15,6 +15,7 @@ import {
   readFile,
   resolveScopeRoot,
   writeFile,
+  writeBinaryFile,
   writeTmpScript,
   type WorkspaceScope,
 } from "./workspace-fs.js";
@@ -216,6 +217,17 @@ app.whenReady().then(async () => {
         if (typeof relative !== "string") throw new Error("path must be a string");
         if (typeof content !== "string") throw new Error("content must be a string");
         return writeFile(scope, relative, content);
+      }),
+  );
+
+  ipcMain.handle(
+    "sa-agent:fs-write-binary",
+    (_event, scopePayload: unknown, relative: unknown, base64: unknown) =>
+      ipcResult(async () => {
+        const scope = parseScope(scopePayload);
+        if (typeof relative !== "string") throw new Error("path must be a string");
+        if (typeof base64 !== "string") throw new Error("base64 must be a string");
+        return writeBinaryFile(scope, relative, base64);
       }),
   );
 

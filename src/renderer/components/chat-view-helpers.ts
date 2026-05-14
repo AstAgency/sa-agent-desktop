@@ -143,28 +143,69 @@ export type ComposerAttachment = {
   content: string;
 };
 
+export type PersistedAttachment = {
+  name: string;
+  size: number;
+  mime: string;
+  kind: "text" | "binary";
+  workspacePath: string;
+};
+
 export const MAX_ATTACHMENT_SIZE_BYTES = 1 * 1024 * 1024;
 export const MAX_ATTACHMENTS_TOTAL_BYTES = 4 * 1024 * 1024;
 export const MAX_COMBINED_MESSAGE_BYTES = 256 * 1024;
+export const DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS =
+  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt";
 
-export function formatAttachmentsBlock(attachments: ComposerAttachment[]): string {
+export function parseAllowedAttachmentExtensions(raw: string | undefined | null): Set<string> {
+  const source = raw && raw.trim().length > 0 ? raw : DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS;
+  return new Set(
+    source
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part.length > 0)
+      .map((part) => (part.startsWith(".") ? part : `.${part}`)),
+  );
+}
+
+export function validateAllowedAttachmentExtension(
+  fileName: string,
+  allowedExtensions: ReadonlySet<string>,
+): string | null {
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
+  if (extension.length === 0 || !allowedExtensions.has(extension)) {
+    return `${fileName} has unsupported file type`;
+  }
+  return null;
+}
+
+export function formatAttachmentsBlock(attachments: PersistedAttachment[]): string {
   if (attachments.length === 0) return "";
   const sections = attachments.map((attachment) => {
-    const label =
-      attachment.kind === "text" ? attachment.mime || "text/plain" : "binary base64";
-    return `=== ${attachment.name} (${attachment.size} bytes, ${label}) ===\n${attachment.content}`;
+    const label = attachment.mime || (attachment.kind === "text" ? "text/plain" : "application/octet-stream");
+    return `=== ${attachment.name} (${attachment.size} bytes, ${label}) :: workspace_path="${escapeAttachmentValue(
+      attachment.workspacePath,
+    )}" ===`;
   });
   return `<attachments>\n${sections.join("\n")}\n</attachments>`;
 }
 
 export function buildComposerMessage(
   text: string,
-  attachments: ComposerAttachment[],
+  attachments: PersistedAttachment[],
 ): string {
   const trimmed = text.trim();
   const attachmentBlock = formatAttachmentsBlock(attachments);
   if (!attachmentBlock) return trimmed;
-  return trimmed.length > 0 ? `${attachmentBlock}\n\n${trimmed}` : attachmentBlock;
+  const userMessageBlock = `<user_message>\n${trimmed}\n</user_message>`;
+  return [
+    attachmentBlock,
+    "<attachment_instructions>",
+    "Use read_file on each workspace_path listed in <attachments> before answering.",
+    "</attachment_instructions>",
+    userMessageBlock,
+  ].join("\n");
 }
 
 export function validateAttachmentSizes(attachments: ComposerAttachment[]): string | null {
@@ -176,9 +217,83 @@ export function validateAttachmentSizes(attachments: ComposerAttachment[]): stri
   if (total > MAX_ATTACHMENTS_TOTAL_BYTES) {
     return `Attachments exceed ${MAX_ATTACHMENTS_TOTAL_BYTES} bytes`;
   }
-  const combinedBytes = new TextEncoder().encode(buildComposerMessage("", attachments)).length;
+  const combinedBytes = new TextEncoder().encode(
+    attachments.map((attachment) => `${attachment.name}:${attachment.size}:${attachment.mime}`).join("\n"),
+  ).length;
   if (combinedBytes > MAX_COMBINED_MESSAGE_BYTES) {
     return `Attachments exceed ${MAX_COMBINED_MESSAGE_BYTES} bytes once serialized`;
+  }
+  return null;
+}
+
+export function nextAvailableAttachmentPath(
+  fileName: string,
+  existingPaths: ReadonlySet<string>,
+): string {
+  if (!existingPaths.has(fileName)) return fileName;
+  const dot = fileName.lastIndexOf(".");
+  const stem = dot >= 0 ? fileName.slice(0, dot) : fileName;
+  const ext = dot >= 0 ? fileName.slice(dot) : "";
+  let index = 2;
+  while (true) {
+    const candidate = `${stem} (${index})${ext}`;
+    if (!existingPaths.has(candidate)) return candidate;
+    index += 1;
+  }
+}
+
+export function extractRenderedUserMessageParts(content: string): {
+  attachments: PersistedAttachment[];
+  text: string;
+} {
+  const attachments = parsePersistedAttachments(content);
+  const userMessageMatch = content.match(/<user_message>\n?([\s\S]*?)\n?<\/user_message>/);
+  const rawText = userMessageMatch ? userMessageMatch[1] ?? "" : content;
+  return {
+    attachments,
+    text: rawText.trim(),
+  };
+}
+
+function parsePersistedAttachments(content: string): PersistedAttachment[] {
+  const blockMatch = content.match(/<attachments>\n?([\s\S]*?)\n?<\/attachments>/);
+  if (!blockMatch) return [];
+  const lines = (blockMatch[1] ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const attachments: PersistedAttachment[] = [];
+  for (const line of lines) {
+    const match = line.match(
+      /^=== (.+) \((\d+) bytes, (.+)\) :: workspace_path="(.+)" ===$/,
+    );
+    if (!match) continue;
+    attachments.push({
+      name: match[1] ?? "",
+      size: Number(match[2] ?? "0"),
+      mime: match[3] ?? "application/octet-stream",
+      kind: (match[3] ?? "").startsWith("text/") ? "text" : "binary",
+      workspacePath: unescapeAttachmentValue(match[4] ?? ""),
+    });
+  }
+  return attachments;
+}
+
+function escapeAttachmentValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function unescapeAttachmentValue(value: string): string {
+  return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+}
+
+export function validateAttachmentTypes(
+  attachments: ComposerAttachment[],
+  allowedExtensions: ReadonlySet<string>,
+): string | null {
+  for (const attachment of attachments) {
+    const error = validateAllowedAttachmentExtension(attachment.name, allowedExtensions);
+    if (error) return error;
   }
   return null;
 }

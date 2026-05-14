@@ -916,6 +916,16 @@ details > summary:hover .row-kebab {
   border: 1px solid var(--border);
 }
 
+.attachment-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attachment-bubble-item {
+  color: var(--text-primary);
+}
+
 .message-role {
   font-size: 10px;
   color: var(--text-muted);

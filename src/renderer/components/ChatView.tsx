@@ -18,13 +18,16 @@ import type { Billing, Message } from "../lib/types";
 import type { RuntimeTraceEvent } from "../agent/runtime";
 import { Markdown } from "./Markdown";
 import {
-  buildComposerMessage,
   buildHistoricalTrace,
+  DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
+  extractRenderedUserMessageParts,
   groupTurns,
   isAtBottom,
   MAX_COMBINED_MESSAGE_BYTES,
+  parseAllowedAttachmentExtensions,
   type ComposerAttachment,
   validateAttachmentSizes,
+  validateAttachmentTypes,
   type ChatTurn,
 } from "./chat-view-helpers";
 import { IconArrowDown, IconPaperclip } from "./icons";
@@ -155,9 +158,9 @@ export function ChatView() {
         hideStop={showLanding}
         onSubmitMessage={
           showLanding
-            ? async (text) => {
+            ? async (text, attachments) => {
                 startNewGlobalSession();
-                await sendMessage(text);
+                await sendMessage(text, attachments);
               }
             : undefined
         }
@@ -397,13 +400,17 @@ function useThinkingWord(language: AppLanguage): string {
   useEffect(() => {
     const id = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % list.length);
-    }, 2500);
+    }, 1200);
     return () => window.clearInterval(id);
   }, [list.length]);
   return list[index] ?? list[0] ?? "";
 }
 
 function MessageView({ message, language }: { message: Message; language: AppLanguage }) {
+  const rendered =
+    message.role === "user"
+      ? extractRenderedUserMessageParts(message.content)
+      : { attachments: [], text: message.content };
   const roleLabel =
     message.role === "user"
       ? translate(language, "chat.role.user")
@@ -411,13 +418,20 @@ function MessageView({ message, language }: { message: Message; language: AppLan
   return (
     <div className={`message-row ${message.role}`}>
       <span className="message-role">{roleLabel}</span>
-      <div className="message-bubble">
-        {message.role === "assistant" ? (
-          <Markdown content={message.content} />
-        ) : (
-          message.content
-        )}
-      </div>
+      {message.role === "user" && rendered.attachments.length > 0 ? (
+        <div className="message-bubble attachment-bubble">
+          {rendered.attachments.map((attachment) => (
+            <div key={`${attachment.workspacePath}-${attachment.name}`} className="attachment-bubble-item">
+              <strong>{attachment.name}</strong> ({attachment.size} bytes, {attachment.mime})
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {rendered.text.length > 0 ? (
+        <div className="message-bubble">
+          {message.role === "assistant" ? <Markdown content={rendered.text} /> : rendered.text}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -495,8 +509,19 @@ function Composer(props: {
   onSelectAgent: (agentKey: string | null) => void;
   language: AppLanguage;
   hideStop?: boolean;
-  onSubmitMessage?: (text: string) => Promise<void>;
+  onSubmitMessage?: (text: string, attachments: ComposerAttachment[]) => Promise<void>;
 }) {
+  const attachmentAllowedExtensions = useMemo(
+    () =>
+      parseAllowedAttachmentExtensions(
+        (
+          import.meta as ImportMeta & {
+            env?: { VITE_ATTACHMENT_ALLOWED_EXTENSIONS?: string };
+          }
+        ).env?.VITE_ATTACHMENT_ALLOWED_EXTENSIONS ?? DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
+      ),
+    [],
+  );
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
@@ -505,21 +530,29 @@ function Composer(props: {
     setError(null);
     const text = value.trim();
     if (text.length === 0 && attachments.length === 0) return;
+    const typeError = validateAttachmentTypes(attachments, attachmentAllowedExtensions);
+    if (typeError) {
+      setError(typeError);
+      return;
+    }
     const validationError = validateAttachmentSizes(attachments);
     if (validationError) {
       setError(validationError);
       return;
     }
-    const payload = buildComposerMessage(text, attachments);
-    if (new TextEncoder().encode(payload).length > MAX_COMBINED_MESSAGE_BYTES) {
+    const payloadBytes = new TextEncoder().encode(
+      attachments.map((attachment) => `${attachment.name}:${attachment.size}:${attachment.mime}`).join("\n") +
+        text,
+    ).length;
+    if (payloadBytes > MAX_COMBINED_MESSAGE_BYTES) {
       setError(`Message exceeds ${MAX_COMBINED_MESSAGE_BYTES} bytes`);
       return;
     }
     try {
       if (props.onSubmitMessage) {
-        await props.onSubmitMessage(payload);
+        await props.onSubmitMessage(text, attachments);
       } else {
-        await sendMessage(payload);
+        await sendMessage(text, attachments);
       }
       setValue("");
       setAttachments([]);
@@ -531,6 +564,11 @@ function Composer(props: {
   async function appendAttachments(nextAttachments: ComposerAttachment[]) {
     if (nextAttachments.length === 0) return;
     const combined = [...attachments, ...nextAttachments];
+    const typeError = validateAttachmentTypes(combined, attachmentAllowedExtensions);
+    if (typeError) {
+      setError(typeError);
+      return;
+    }
     const validationError = validateAttachmentSizes(combined);
     if (validationError) {
       setError(validationError);

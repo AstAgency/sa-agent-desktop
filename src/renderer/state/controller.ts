@@ -22,8 +22,20 @@ import {
 } from "../lib/api";
 import { getBridge } from "../lib/bridge";
 import { translate } from "../lib/i18n";
-import type { AgentRole, AgentSkill, Message, Session, Summary, WorkspaceScope } from "../lib/types";
+import type {
+  AgentRole,
+  AgentSkill,
+  Message,
+  Session,
+  Summary,
+  WorkspaceScope,
+} from "../lib/types";
 import { SessionRuntime, type SessionRuntimeState } from "../agent/runtime";
+import {
+  buildComposerMessage,
+  nextAvailableAttachmentPath,
+  type ComposerAttachment,
+} from "../components/chat-view-helpers";
 import { createAgentContentCache } from "./agent-content-cache";
 import {
   getState,
@@ -359,9 +371,12 @@ async function hydrateSession(sessionId: string) {
   }
 }
 
-export async function sendMessage(content: string): Promise<void> {
+export async function sendMessage(
+  content: string,
+  attachments: ComposerAttachment[] = [],
+): Promise<void> {
   const trimmed = content.trim();
-  if (trimmed.length === 0) return;
+  if (trimmed.length === 0 && attachments.length === 0) return;
   const state = getState();
   if (state.sendingMessage) throw new Error("Already sending a message");
   if (!state.profile) throw new Error("Profile not loaded");
@@ -379,7 +394,7 @@ export async function sendMessage(content: string): Promise<void> {
       session = existing;
     } else if (selection.kind === "new-global") {
       session = await createSession({
-        display_name: deriveDisplayName(content),
+        display_name: deriveDisplayName(deriveSessionNameSource(content, attachments)),
         project_id: null,
       });
       setState((s) => ({
@@ -391,7 +406,7 @@ export async function sendMessage(content: string): Promise<void> {
       }));
     } else if (selection.kind === "new-project") {
       session = await createSession({
-        display_name: deriveDisplayName(content),
+        display_name: deriveDisplayName(deriveSessionNameSource(content, attachments)),
         project_id: selection.projectId,
       });
       const projectId = selection.projectId;
@@ -409,9 +424,12 @@ export async function sendMessage(content: string): Promise<void> {
       throw new Error("Nothing selected — open or start a session first");
     }
 
+    const scope = buildSessionScope(state, session);
+    const persistedAttachments = await saveAttachmentsToWorkspace(scope, attachments);
+    const messageContent = buildComposerMessage(content, persistedAttachments);
     const runtime = await acquireRuntime(session);
     try {
-      await runtime.sendUserMessage(content);
+      await runtime.sendUserMessage(messageContent);
     } catch (error) {
       reportStreamError(error, session.id);
       throw error;
@@ -421,6 +439,15 @@ export async function sendMessage(content: string): Promise<void> {
     runtimeTrace: [] }));
     void refreshBilling();
   }
+}
+
+function deriveSessionNameSource(
+  content: string,
+  attachments: ComposerAttachment[],
+): string {
+  const trimmed = content.trim();
+  if (trimmed.length > 0) return trimmed;
+  return attachments[0]?.name ?? "New chat";
 }
 
 function reportStreamError(error: unknown, sessionId: string) {
@@ -471,17 +498,7 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     state.agents.find((candidate) => candidate.agent_key === state.selectedAgentKey) ??
     state.agents[0] ??
     null;
-  const scope: WorkspaceScope = session.project_id
-    ? {
-        kind: "project",
-        projectId: session.project_id,
-        displayName: project?.name ?? session.project_id,
-      }
-    : {
-        kind: "global",
-        sessionId: session.id,
-        displayName: session.display_name,
-      };
+  const scope = buildSessionScope(state, session);
   const messages = state.messagesBySession[session.id] ?? [];
   const summaries = state.summariesBySession[session.id] ?? [];
   const [agentSkills, agentRoles] = agent
@@ -511,6 +528,59 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
   runtimeUnsubscribes.set(session.id, unsubscribe);
   runtimeBySession.set(session.id, runtime);
   return runtime;
+}
+
+function buildSessionScope(state: ClientState, session: Session): WorkspaceScope {
+  const project = session.project_id
+    ? state.projects.find((proj) => proj.id === session.project_id) ?? null
+    : null;
+  return session.project_id
+    ? {
+        kind: "project",
+        projectId: session.project_id,
+        displayName: project?.name ?? session.project_id,
+      }
+    : {
+        kind: "global",
+        sessionId: session.id,
+        displayName: session.display_name,
+      };
+}
+
+async function saveAttachmentsToWorkspace(
+  scope: WorkspaceScope,
+  attachments: ComposerAttachment[],
+) {
+  if (attachments.length === 0) return [];
+  const fs = getBridge().fs;
+  const rootEntries = await fs.list(scope, ".");
+  const usedPaths = new Set(
+    rootEntries.filter((entry) => entry.type === "file").map((entry) => entry.name),
+  );
+  const persisted: Array<{
+    name: string;
+    size: number;
+    mime: string;
+    kind: "text" | "binary";
+    workspacePath: string;
+  }> = [];
+  for (const attachment of attachments) {
+    const workspacePath = nextAvailableAttachmentPath(attachment.name, usedPaths);
+    usedPaths.add(workspacePath);
+    if (attachment.kind === "text") {
+      await fs.write(scope, workspacePath, attachment.content);
+    } else {
+      await fs.writeBinary(scope, workspacePath, attachment.content);
+    }
+    persisted.push({
+      name: attachment.name,
+      size: attachment.size,
+      mime: attachment.mime,
+      kind: attachment.kind,
+      workspacePath,
+    });
+  }
+  return persisted;
 }
 
 function onRuntimeStateChanged(sessionId: string, runtimeState: SessionRuntimeState) {

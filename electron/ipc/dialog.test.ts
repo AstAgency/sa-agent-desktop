@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDialogFileFilters,
   classifyFile,
   inferMime,
+  parseAllowedAttachmentExtensions,
+  validateAllowedAttachmentExtension,
   validateDialogSelection,
   MAX_DIALOG_FILE_BYTES,
   MAX_DIALOG_TOTAL_BYTES,
@@ -37,5 +40,25 @@ test("validateDialogSelection enforces per-file and aggregate limits", () => {
       { name: "e.txt", size: 1 },
     ]) ?? "",
     /Selected files exceed/,
+  );
+});
+
+test("parseAllowedAttachmentExtensions normalizes env values and builds dialog filters", () => {
+  const allowed = parseAllowedAttachmentExtensions(" pdf, .DOCX,txt, md ,,yaml ");
+  assert.deepEqual([...allowed], [".pdf", ".docx", ".txt", ".md", ".yaml"]);
+  assert.deepEqual(buildDialogFileFilters(allowed), [
+    {
+      name: "Allowed attachments",
+      extensions: ["pdf", "docx", "txt", "md", "yaml"],
+    },
+  ]);
+});
+
+test("validateAllowedAttachmentExtension rejects files outside env allowlist", () => {
+  const allowed = parseAllowedAttachmentExtensions(".pdf,.docx,.txt");
+  assert.equal(validateAllowedAttachmentExtension("brief.pdf", allowed), null);
+  assert.match(
+    validateAllowedAttachmentExtension("archive.zip", allowed) ?? "",
+    /archive\.zip has unsupported file type/,
   );
 });

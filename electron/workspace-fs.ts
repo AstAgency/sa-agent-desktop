@@ -272,6 +272,19 @@ export async function writeFile(
   return { path: path.relative(root, target) };
 }
 
+export async function writeBinaryFile(
+  scope: WorkspaceScope,
+  relative: string,
+  base64: string,
+): Promise<{ path: string }> {
+  assertPrimaryWritePath(relative);
+  const root = await ensureScopeRoot(scope);
+  const target = resolveSafePath(root, relative);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, Buffer.from(base64, "base64"));
+  return { path: path.relative(root, target) };
+}
+
 export async function editFile(
   scope: WorkspaceScope,
   relative: string,
