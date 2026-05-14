@@ -37,6 +37,14 @@ type SearchStatus =
   | { state: "unsupported"; reason: string }
   | { state: "failed"; error: string };
 
+type DialogOpenFileResult = {
+  name: string;
+  size: number;
+  mime: string;
+  kind: "text" | "binary";
+  content: string;
+};
+
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
   const result = await invocation;
   if (!result || typeof result !== "object") {
@@ -127,6 +135,11 @@ contextBridge.exposeInMainWorld("saAgent", {
     },
     startSearch(): Promise<SearchStatus> {
       return unwrap(ipcRenderer.invoke("sa-agent:net-start-search"));
+    },
+  },
+  dialog: {
+    openFiles(): Promise<DialogOpenFileResult[]> {
+      return unwrap(ipcRenderer.invoke("sa-agent:dialog-open-files"));
     },
   },
 });

@@ -243,6 +243,14 @@ export type FileEntry = {
   modified_at: string;
 };
 
+export type DialogOpenFileResult = {
+  name: string;
+  size: number;
+  mime: string;
+  kind: "text" | "binary";
+  content: string;
+};
+
 export type RunPythonResult = {
   stdout: string;
   stderr: string;

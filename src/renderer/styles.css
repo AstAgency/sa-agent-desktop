@@ -728,11 +728,40 @@ details > summary:hover .row-kebab {
 
 .chat-history {
   flex: 1;
+  position: relative;
   overflow-y: auto;
   padding: 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.landing-state {
+  flex: 1;
+  justify-content: center;
+}
+
+.scroll-to-latest {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-end;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  color: var(--text-primary);
+  border-radius: 999px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+}
+
+.scroll-to-latest svg {
+  width: 16px;
+  height: 16px;
 }
 
 .message-row {
@@ -1210,6 +1239,33 @@ details > summary:hover .row-kebab {
 
 .chat-composer textarea:focus { outline: 1px solid var(--accent); }
 
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.attachment-remove {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border: none;
+  padding: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
 .chat-composer .row {
   display: flex;
   justify-content: space-between;
@@ -1248,6 +1304,18 @@ details > summary:hover .row-kebab {
 .chat-composer button.secondary {
   background: var(--bg-elevated-strong);
   color: var(--text-primary);
+}
+
+.chat-composer .icon-only-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+.chat-composer .icon-only-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .chat-composer .error {

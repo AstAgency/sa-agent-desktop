@@ -33,6 +33,7 @@ import {
   getRefreshToken,
   setAuthSession,
 } from "./token-store";
+import { performAuthenticatedFetch } from "./auth-fetch";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3000";
 const BASE_URL_STORAGE_KEY = "sa-agent.backend-url";
@@ -70,26 +71,15 @@ async function attemptTokenRefresh(): Promise<boolean> {
   return inflightRefresh;
 }
 
-function buildAuthorizedHeaders(extra?: HeadersInit): Headers {
-  const headers = new Headers(extra);
-  const token = getAccessToken();
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  return headers;
-}
-
 async function fetchWithAuth(url: string, init: RequestInit): Promise<Response> {
-  const headers = buildAuthorizedHeaders(init.headers);
-  const response = await fetch(url, { ...init, headers });
-  if (response.status !== 401) return response;
-  const refreshed = await attemptTokenRefresh();
-  if (!refreshed) {
-    clearAuthSession();
-    onSessionInvalidated?.();
-    return response;
-  }
-  // Replay once with the new token.
-  const retryHeaders = buildAuthorizedHeaders(init.headers);
-  return fetch(url, { ...init, headers: retryHeaders });
+  return performAuthenticatedFetch(url, init, {
+    fetchImpl: fetch,
+    getAccessToken,
+    getRefreshToken,
+    refreshSession: async (_refreshToken) => attemptTokenRefresh(),
+    clearAuthSession,
+    onSessionInvalidated,
+  });
 }
 
 function getBackendUrl(): string {

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "rootDir": "src/renderer",
+    "outDir": "/private/tmp/sa-agent-renderer-tests",
+    "types": ["node"]
+  },
+  "include": [
+    "src/renderer/lib/auth-api.ts",
+    "src/renderer/lib/auth-fetch.ts",
+    "src/renderer/lib/auth-fetch.test.ts",
+    "src/renderer/lib/types.ts",
+    "src/renderer/components/chat-view-helpers.ts",
+    "src/renderer/components/chat-view-helpers.test.ts"
+  ]
+}

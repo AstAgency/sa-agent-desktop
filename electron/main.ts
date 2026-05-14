@@ -7,6 +7,7 @@ import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
 import { SearxngRuntime } from "./searxng-runtime.js";
 import { fetchUrl } from "./net/http-fetcher.js";
 import { runSearch } from "./net/web-search.js";
+import { openFilesDialog } from "./ipc/dialog.js";
 import {
   editFile,
   ensureScopeRoot,
@@ -323,6 +324,10 @@ app.whenReady().then(async () => {
       await searxngRuntime.ensureRunning();
       return searxngRuntime.getStatus();
     }),
+  );
+
+  ipcMain.handle("sa-agent:dialog-open-files", () =>
+    ipcResult(async () => openFilesDialog()),
   );
 
   pythonRuntime.start().catch((error) => {

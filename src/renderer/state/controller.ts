@@ -114,6 +114,7 @@ export async function bootstrap() {
       embeddingModel,
       agents,
       selectedAgentKey: state.selectedAgentKey ?? agents[0]?.agent_key ?? null,
+      selection: state.selection.kind === "none" ? { kind: "new-global" } : state.selection,
       bootstrap: { ...state.bootstrap, status: "ready", error: null },
     }));
     await Promise.all(projects.map((project) => loadProjectSessions(project.id)));

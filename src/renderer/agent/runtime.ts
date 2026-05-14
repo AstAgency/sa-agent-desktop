@@ -503,7 +503,6 @@ export class SessionRuntime {
             // reasoning trace event and clear the live final-answer bubble.
             if (!round.hasToolCalls) {
               this.promoteToReasoning(round);
-              this.state = { ...this.state, streamingFinalText: "" };
             }
             const eventId = nextTraceEventId("tool");
             round.toolCallEventIds.set(id, eventId);
@@ -548,7 +547,6 @@ export class SessionRuntime {
         // make sure the trace shows this round had reasoning (an empty one).
         if (!round.hasToolCalls) {
           this.promoteToReasoning(round);
-          this.state = { ...this.state, streamingFinalText: "" };
           this.notify();
         }
         for (const toolCall of result.tool_calls) {

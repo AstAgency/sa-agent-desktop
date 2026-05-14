@@ -13,6 +13,7 @@ type Stage =
   | { kind: "code"; email: string };
 
 export function AuthScreen() {
+  const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
   const language = useClientState((state) => state.language);
   const [stage, setStage] = useState<Stage>({ kind: "email" });
   const [email, setEmail] = useState("");
@@ -140,18 +141,20 @@ export function AuthScreen() {
           </form>
         )}
 
-        <div className="auth-dev">
-          <h3>{translate(language, "auth.dev.title")}</h3>
-          <p>{translate(language, "auth.dev.description")}</p>
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={handleDevFallback}
-          >
-            {translate(language, "auth.dev.submit")}
-          </button>
-        </div>
+        {isDev ? (
+          <div className="auth-dev">
+            <h3>{translate(language, "auth.dev.title")}</h3>
+            <p>{translate(language, "auth.dev.description")}</p>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={handleDevFallback}
+            >
+              {translate(language, "auth.dev.submit")}
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
   );

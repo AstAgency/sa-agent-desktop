@@ -1,4 +1,5 @@
 import type {
+  DialogOpenFileResult,
   FileEntry,
   PythonRuntimeStatus,
   RunPythonResult,
@@ -42,6 +43,9 @@ type Bridge = {
     webSearch: (query: string, limit?: number) => Promise<string>;
     getSearchStatus: () => Promise<SearchStatus>;
     startSearch: () => Promise<SearchStatus>;
+  };
+  dialog: {
+    openFiles: () => Promise<DialogOpenFileResult[]>;
   };
 };
 

@@ -91,6 +91,7 @@ const dictionaries = {
 
     "chat.selectSession": "Select a session",
     "chat.selectSessionHint": "Pick a global session, open a project, or start a new chat from the sidebar.",
+    "chat.empty.greeting": "What should we work on?",
     "chat.newProject": "New chat in {project}",
     "chat.newGlobal": "New global chat",
     "chat.loading": "Loading…",
@@ -104,6 +105,8 @@ const dictionaries = {
     "chat.role.assistant": "assistant",
     "chat.role.thinking": "thinking…",
     "chat.placeholder": "Send a message…",
+    "chat.attachFiles": "Attach files",
+    "chat.attachRemove": "Remove attachment",
     "chat.send": "Send",
     "chat.sendHint": "Send (⌘/Ctrl + ↵)",
     "chat.sending": "Sending…",
@@ -130,6 +133,7 @@ const dictionaries = {
     "chat.runtime.status.success": "success",
     "chat.runtime.status.error": "error",
     "chat.runtime.empty": "No events yet — waiting for the model…",
+    "chat.scrollToLatest": "Jump to latest",
 
     "usage.title": "Usage",
     "usage.hourly": "Hour",
@@ -228,6 +232,7 @@ const dictionaries = {
 
     "chat.selectSession": "Выберите сессию",
     "chat.selectSessionHint": "Откройте глобальную сессию, проект или создайте новый чат в боковой панели.",
+    "chat.empty.greeting": "С чего начнем?",
     "chat.newProject": "Новый чат в {project}",
     "chat.newGlobal": "Новый глобальный чат",
     "chat.loading": "Загрузка…",
@@ -241,6 +246,8 @@ const dictionaries = {
     "chat.role.assistant": "ассистент",
     "chat.role.thinking": "думает…",
     "chat.placeholder": "Введите сообщение…",
+    "chat.attachFiles": "Прикрепить файлы",
+    "chat.attachRemove": "Убрать вложение",
     "chat.send": "Отправить",
     "chat.sendHint": "Отправить (⌘/Ctrl + ↵)",
     "chat.sending": "Отправка…",
@@ -267,6 +274,7 @@ const dictionaries = {
     "chat.runtime.status.success": "успех",
     "chat.runtime.status.error": "ошибка",
     "chat.runtime.empty": "Событий пока нет — ждём модель…",
+    "chat.scrollToLatest": "К последнему",
 
     "usage.title": "Использование",
     "usage.hourly": "Час",
