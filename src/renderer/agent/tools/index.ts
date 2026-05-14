@@ -1,7 +1,11 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
 import { getBridge } from "../../lib/bridge";
-import type { Project, WorkspaceScope } from "../../lib/types";
+import type { AgentRole, AgentSkill, Project, WorkspaceScope } from "../../lib/types";
+import {
+  formatGetRoleResult,
+  formatGetSkillResult,
+} from "./agent-content-tools";
 
 type ToolDefinition = AgentTool;
 
@@ -14,6 +18,13 @@ export type WorkspaceToolActions = {
   createProject: (input: { name: string; description?: string }) => Promise<Project>;
 };
 
+export type AgentContentLookups = {
+  findSkill: (name: string) => AgentSkill | null;
+  findRole: (name: string) => AgentRole | null;
+  listSkillNames: () => string[];
+  listRoleNames: () => string[];
+};
+
 function textResult(text: string, details?: Record<string, unknown>) {
   return {
     content: [{ type: "text" as const, text }],
@@ -24,6 +35,7 @@ function textResult(text: string, details?: Record<string, unknown>) {
 export function buildWorkspaceTools(
   scope: WorkspaceScope,
   actions: WorkspaceToolActions,
+  agentContent: AgentContentLookups,
 ): ToolDefinition[] {
   const fs = getBridge().fs;
   const net = getBridge().net;
@@ -279,6 +291,50 @@ export function buildWorkspaceTools(
     },
   };
 
+  const getSkillTool: ToolDefinition = {
+    name: "get_skill",
+    label: "Get skill",
+    description:
+      "Load the full SKILL.md and any bundled templates for one of the skills listed in the <skills> block of the system prompt. Use this after picking a skill by name from <skills> — do NOT use list_files to look for skills.",
+    parameters: Type.Object(
+      {
+        name: Type.String({ description: "Skill name as listed in <skills>" }),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const name = pickString(args, "name");
+      const formatted = formatGetSkillResult({
+        skill: agentContent.findSkill(name),
+        requestedName: name,
+        available: agentContent.listSkillNames(),
+      });
+      return textResult(formatted.text, { name, ok: formatted.ok });
+    },
+  };
+
+  const getRoleTool: ToolDefinition = {
+    name: "get_role",
+    label: "Get role",
+    description:
+      "Load the full role prompt for one of the roles listed in the <roles> block of the system prompt. Use this after picking a role by name from <roles> — do NOT use list_files to look for roles.",
+    parameters: Type.Object(
+      {
+        name: Type.String({ description: "Role name as listed in <roles>" }),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const name = pickString(args, "name");
+      const formatted = formatGetRoleResult({
+        role: agentContent.findRole(name),
+        requestedName: name,
+        available: agentContent.listRoleNames(),
+      });
+      return textResult(formatted.text, { name, ok: formatted.ok });
+    },
+  };
+
   const tools: ToolDefinition[] = [
     readFileTool,
     writeFileTool,
@@ -289,6 +345,8 @@ export function buildWorkspaceTools(
     webSearchTool,
     updateGlobalMemoryTool,
   ];
+  if (agentContent.listSkillNames().length > 0) tools.push(getSkillTool);
+  if (agentContent.listRoleNames().length > 0) tools.push(getRoleTool);
   if (scope.kind === "global") tools.push(createProjectTool);
   if (scope.kind === "project") tools.push(updateProjectMemoryTool);
   return tools;

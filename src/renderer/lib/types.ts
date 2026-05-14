@@ -86,19 +86,20 @@ export type Agent = {
 export type AgentRole = {
   id: string;
   agent_id: string;
-  role_name: string;
+  name: string;
   description: string | null;
-  prompt_content: string;
+  prompt: string;
   created_at: string;
+  updated_at?: string;
 };
 
 export type AgentSkill = {
   id: string;
   agent_id: string;
-  skill_name: string;
-  description: string | null;
+  name: string;
   files: Record<string, string>;
   created_at: string;
+  updated_at?: string;
 };
 
 export type AgentSyncResult = {
