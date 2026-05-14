@@ -77,7 +77,9 @@ if (!existsSync(interpreter)) {
 
 console.log(`[python-runtime] creating venv at ${venvRoot}`);
 if (existsSync(venvRoot)) rmSync(venvRoot, { recursive: true, force: true });
-execFileSync(interpreter, ["-m", "venv", venvRoot], { stdio: "inherit" });
+// --copies: avoid absolute symlinks to the build machine's interpreter, so
+// the venv stays valid after packaging into another machine's app bundle.
+execFileSync(interpreter, ["-m", "venv", "--copies", venvRoot], { stdio: "inherit" });
 
 const venvPython = resolveVenvInterpreterPath(venvRoot);
 if (!existsSync(venvPython)) {
