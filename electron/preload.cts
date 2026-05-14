@@ -37,6 +37,14 @@ type SearchStatus =
   | { state: "unsupported"; reason: string }
   | { state: "failed"; error: string };
 
+type DialogOpenFileResult = {
+  name: string;
+  size: number;
+  mime: string;
+  kind: "text" | "binary";
+  content: string;
+};
+
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
   const result = await invocation;
   if (!result || typeof result !== "object") {
@@ -83,6 +91,9 @@ contextBridge.exposeInMainWorld("saAgent", {
     write(scope: WorkspaceScope, path: string, content: string): Promise<{ path: string }> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-write", scope, path, content));
     },
+    writeBinary(scope: WorkspaceScope, path: string, base64: string): Promise<{ path: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-write-binary", scope, path, base64));
+    },
     edit(
       scope: WorkspaceScope,
       path: string,
@@ -127,6 +138,11 @@ contextBridge.exposeInMainWorld("saAgent", {
     },
     startSearch(): Promise<SearchStatus> {
       return unwrap(ipcRenderer.invoke("sa-agent:net-start-search"));
+    },
+  },
+  dialog: {
+    openFiles(): Promise<DialogOpenFileResult[]> {
+      return unwrap(ipcRenderer.invoke("sa-agent:dialog-open-files"));
     },
   },
 });

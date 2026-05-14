@@ -6,12 +6,9 @@
  * Endpoints (per spec):
  *   POST /v1/auth/email/request-code { email }
  *   POST /v1/auth/email/verify-code  { email, code, name }
- *   POST /v1/auth/refresh            { refresh_token }  -- assumed; see spec note below
+ *   POST /v1/auth/token/refresh      { refresh_token }
  *
- * The /v1/auth/refresh endpoint shape is not in the public spec we received,
- * so we default to a sensible payload. If the server contract differs, swap
- * out refreshTokens() — the rest of the auth flow does not depend on the
- * specific shape.
+ * The refresh endpoint uses the same JSON payload shape as the curl examples.
  */
 
 export type AuthUser = {
@@ -46,6 +43,7 @@ export class AuthApiError extends Error {
 }
 
 const DEFAULT_AUTH_BASE_URL = "http://127.0.0.1:3100";
+export const AUTH_REFRESH_PATH = "/v1/auth/token/refresh";
 
 function getAuthBaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -127,7 +125,7 @@ export async function verifyEmailCode(input: {
 export async function refreshTokens(refreshToken: string): Promise<AuthSession> {
   if (!refreshToken) throw new AuthApiError(400, "missing_refresh_token");
   const payload = await postJson<{ user?: AuthUser; tokens: AuthTokens }>(
-    "/v1/auth/refresh",
+    AUTH_REFRESH_PATH,
     { refresh_token: refreshToken },
   );
   // Some servers omit the user on refresh — surface a placeholder; the
@@ -168,4 +166,3 @@ export function buildDevSession(input: { email: string; name: string }): AuthSes
     },
   };
 }
-

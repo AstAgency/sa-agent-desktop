@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { abortActiveTurn, refreshBilling, sendMessage, setSelectedAgent } from "../state/controller";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
+import {
+  abortActiveTurn,
+  refreshBilling,
+  sendMessage,
+  setSelectedAgent,
+  startNewGlobalSession,
+} from "../state/controller";
+import { getBridge } from "../lib/bridge";
 import {
   selectActiveProject,
   selectActiveSession,
@@ -7,72 +14,26 @@ import {
   useClientState,
 } from "../state/store";
 import { THINKING_WORDS, translate, type AppLanguage } from "../lib/i18n";
-import type { Billing, Message, OpenAIToolCallRecord } from "../lib/types";
+import type { Billing, Message } from "../lib/types";
 import type { RuntimeTraceEvent } from "../agent/runtime";
 import { Markdown } from "./Markdown";
+import {
+  buildHistoricalTrace,
+  DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
+  extractRenderedUserMessageParts,
+  groupTurns,
+  isAtBottom,
+  MAX_COMBINED_MESSAGE_BYTES,
+  parseAllowedAttachmentExtensions,
+  type ComposerAttachment,
+  validateAttachmentSizes,
+  validateAttachmentTypes,
+  type ChatTurn,
+} from "./chat-view-helpers";
+import { IconArrowDown, IconPaperclip } from "./icons";
 
 const EMPTY_MESSAGES: Message[] = [];
 const EMPTY_TRACE: RuntimeTraceEvent[] = [];
-
-/**
- * One user → assistant cycle. Intermediate assistant turns (those with
- * tool_calls) and tool result messages live inside `traceMessages` and are
- * surfaced via the collapsible "Ход выполнения" block. Only `userMessage`
- * and `finalAssistant` are shown in the main chat thread.
- */
-type ChatTurn = {
-  key: string;
-  userMessage: Message | null;
-  traceMessages: Message[];
-  finalAssistant: Message | null;
-};
-
-function groupTurns(messages: Message[]): ChatTurn[] {
-  const turns: ChatTurn[] = [];
-  let current: ChatTurn | null = null;
-  const flush = () => {
-    if (current) turns.push(current);
-    current = null;
-  };
-  for (const message of messages) {
-    if (message.role === "system") continue;
-    if (message.role === "user") {
-      flush();
-      current = {
-        key: `turn-${message.id}`,
-        userMessage: message,
-        traceMessages: [],
-        finalAssistant: null,
-      };
-      continue;
-    }
-    if (!current) {
-      current = {
-        key: `turn-orphan-${message.id}`,
-        userMessage: null,
-        traceMessages: [],
-        finalAssistant: null,
-      };
-    }
-    if (message.role === "tool") {
-      current.traceMessages.push(message);
-      continue;
-    }
-    if (message.role === "assistant") {
-      const hasToolCalls = (message.tool_calls?.length ?? 0) > 0;
-      if (hasToolCalls) {
-        current.traceMessages.push(message);
-      } else {
-        if (current.finalAssistant !== null) {
-          current.traceMessages.push(current.finalAssistant);
-        }
-        current.finalAssistant = message;
-      }
-    }
-  }
-  flush();
-  return turns;
-}
 
 export function ChatView() {
   const selection = useClientState((state) => state.selection);
@@ -94,15 +55,19 @@ export function ChatView() {
   const lastStreamError = useClientState((state) => state.lastStreamError);
 
   const turns = useMemo(() => groupTurns(rawMessages), [rawMessages]);
-
-  if (selection.kind === "none") {
-    return (
-      <main className="workspace workspace-empty">
-        <h1>{translate(language, "chat.selectSession")}</h1>
-        <p>{translate(language, "chat.selectSessionHint")}</p>
-      </main>
-    );
-  }
+  const historyRef = useRef<HTMLDivElement | null>(null);
+  const selectionKey =
+    selection.kind === "session"
+      ? `session:${selection.sessionId}`
+      : selection.kind === "new-project"
+        ? `new-project:${selection.projectId}`
+        : selection.kind;
+  const { isPinnedToBottom, scrollToBottom } = useStickyBottom(historyRef, {
+    selectionKey,
+    sending,
+    contentVersion: `${turns.length}:${runtimeTrace.length}:${streamingFinalText.length}:${Number(Boolean(lastStreamError))}`,
+  });
+  const showLanding = selection.kind === "none";
 
   const isNewSession = selection.kind === "new-global" || selection.kind === "new-project";
   const title = isNewSession
@@ -121,50 +86,67 @@ export function ChatView() {
 
   return (
     <main className="workspace chat-view">
-      <header className="chat-header">
-        <div className="chat-header-top">
-          <h2>{title}</h2>
-          <BillingBadge billing={billing} language={language} />
-        </div>
-        <span className="meta">
-          {scopeLabel} · {translate(language, "chat.session.id")}: {sessionLabel}
-        </span>
-      </header>
+      {!showLanding ? (
+        <header className="chat-header">
+          <div className="chat-header-top">
+            <h2>{title}</h2>
+            <BillingBadge billing={billing} language={language} />
+          </div>
+          <span className="meta">
+            {scopeLabel} · {translate(language, "chat.session.id")}: {sessionLabel}
+          </span>
+        </header>
+      ) : null}
 
-      <div className="chat-history">
-        {isLoading ? <em>{translate(language, "chat.loadingHistory")}</em> : null}
-        {turns.map((turn) => (
-          <TurnView key={turn.key} turn={turn} language={language} />
-        ))}
-        {sending ? (
-          <LiveTurn
-            trace={runtimeTrace}
-            streamingFinalText={streamingFinalText}
-            language={language}
-          />
+      <div ref={historyRef} className="chat-history">
+        {showLanding ? (
+          <div className="workspace-empty landing-state">
+            <h1>{translate(language, "chat.empty.greeting")}</h1>
+            <p>{translate(language, "chat.selectSessionHint")}</p>
+          </div>
+        ) : (
+          <>
+            {isLoading ? <em>{translate(language, "chat.loadingHistory")}</em> : null}
+            {turns.map((turn) => (
+              <TurnView key={turn.key} turn={turn} language={language} />
+            ))}
+            {sending ? (
+              <LiveTurn
+                trace={runtimeTrace}
+                streamingFinalText={streamingFinalText}
+                language={language}
+              />
+            ) : null}
+            {showError ? (
+              <StreamErrorBubble
+                message={lastStreamError!.message}
+                language={language}
+                onDismiss={() => setLastStreamError(null)}
+              />
+            ) : null}
+            {!isLoading &&
+            turns.length === 0 &&
+            !sending &&
+            !showError ? (
+              <p style={{ color: "var(--text-muted)" }}>
+                {translate(language, "chat.typeToStart")}
+                {isNewSession ? translate(language, "chat.derivedName") : ""}
+              </p>
+            ) : null}
+          </>
+        )}
+        {!isPinnedToBottom ? (
+          <button
+            type="button"
+            className="scroll-to-latest"
+            onClick={scrollToBottom}
+            aria-label={translate(language, "chat.scrollToLatest")}
+            title={translate(language, "chat.scrollToLatest")}
+          >
+            <IconArrowDown />
+            <span>{translate(language, "chat.scrollToLatest")}</span>
+          </button>
         ) : null}
-        {showError ? (
-          <StreamErrorBubble
-            message={lastStreamError!.message}
-            language={language}
-            onDismiss={() => setLastStreamError(null)}
-          />
-        ) : null}
-        {!isLoading &&
-        turns.length === 0 &&
-        !sending &&
-        !showError ? (
-          <p style={{ color: "var(--text-muted)" }}>
-            {translate(language, "chat.typeToStart")}
-            {isNewSession ? translate(language, "chat.derivedName") : ""}
-          </p>
-        ) : null}
-        <BottomAnchor
-          turnsLength={turns.length}
-          streamingFinalText={streamingFinalText}
-          traceLength={runtimeTrace.length}
-          sending={sending}
-        />
       </div>
 
       <Composer
@@ -173,6 +155,15 @@ export function ChatView() {
         selectedAgentKey={selectedAgentKey}
         onSelectAgent={setSelectedAgent}
         language={language}
+        hideStop={showLanding}
+        onSubmitMessage={
+          showLanding
+            ? async (text, attachments) => {
+                startNewGlobalSession();
+                await sendMessage(text, attachments);
+              }
+            : undefined
+        }
       />
     </main>
   );
@@ -244,6 +235,9 @@ function TurnView({ turn, language }: { turn: ChatTurn; language: AppLanguage })
   return (
     <div className="chat-turn">
       {turn.userMessage ? <MessageView message={turn.userMessage} language={language} /> : null}
+      {turn.reasoningMessages.map((message) => (
+        <MessageView key={message.id} message={message} language={language} />
+      ))}
       {trace.length > 0 ? (
         <RuntimeBlock
           trace={trace}
@@ -397,66 +391,6 @@ function RuntimeEvent({
   );
 }
 
-/**
- * For previously-completed turns we don't have the live trace anymore — it's
- * not persisted. But we can reconstruct a useful approximation from the
- * stored intermediate assistant messages + their tool_calls + tool results.
- */
-function buildHistoricalTrace(traceMessages: Message[]): RuntimeTraceEvent[] {
-  const events: RuntimeTraceEvent[] = [];
-  const resultsByCallId = new Map<string, { text: string; isError: boolean }>();
-  for (const message of traceMessages) {
-    if (message.role !== "tool") continue;
-    const callId = message.tool_call_id ?? "";
-    if (!callId) continue;
-    resultsByCallId.set(callId, {
-      text: message.content,
-      isError: false,
-    });
-  }
-  let counter = 0;
-  for (const message of traceMessages) {
-    if (message.role !== "assistant") continue;
-    if (message.content.trim().length > 0) {
-      counter += 1;
-      events.push({
-        kind: "reasoning",
-        id: `hist-reasoning-${message.id}`,
-        round: counter,
-        text: message.content,
-        at: Date.parse(message.created_at) || 0,
-      });
-    }
-    const toolCalls: OpenAIToolCallRecord[] = message.tool_calls ?? [];
-    for (const toolCall of toolCalls) {
-      counter += 1;
-      const result = resultsByCallId.get(toolCall.id);
-      events.push({
-        kind: "tool_call",
-        id: `hist-tool-${toolCall.id}`,
-        round: counter,
-        toolCallId: toolCall.id,
-        name: toolCall.function?.name ?? "",
-        argsJson: prettifyJson(toolCall.function?.arguments ?? ""),
-        status: result ? (result.isError ? "error" : "success") : "success",
-        result: result ? result.text : undefined,
-        at: Date.parse(message.created_at) || 0,
-      });
-    }
-  }
-  return events;
-}
-
-function prettifyJson(value: string): string {
-  if (!value) return "";
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
-
-
 function useThinkingWord(language: AppLanguage): string {
   const list = THINKING_WORDS[language] ?? THINKING_WORDS.en;
   const [index, setIndex] = useState(() => Math.floor(Math.random() * list.length));
@@ -466,13 +400,17 @@ function useThinkingWord(language: AppLanguage): string {
   useEffect(() => {
     const id = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % list.length);
-    }, 2500);
+    }, 1200);
     return () => window.clearInterval(id);
   }, [list.length]);
   return list[index] ?? list[0] ?? "";
 }
 
 function MessageView({ message, language }: { message: Message; language: AppLanguage }) {
+  const rendered =
+    message.role === "user"
+      ? extractRenderedUserMessageParts(message.content)
+      : { attachments: [], text: message.content };
   const roleLabel =
     message.role === "user"
       ? translate(language, "chat.role.user")
@@ -480,33 +418,88 @@ function MessageView({ message, language }: { message: Message; language: AppLan
   return (
     <div className={`message-row ${message.role}`}>
       <span className="message-role">{roleLabel}</span>
-      <div className="message-bubble">
-        {message.role === "assistant" ? (
-          <Markdown content={message.content} />
-        ) : (
-          message.content
-        )}
-      </div>
+      {message.role === "user" && rendered.attachments.length > 0 ? (
+        <div className="message-bubble attachment-bubble">
+          {rendered.attachments.map((attachment) => (
+            <div key={`${attachment.workspacePath}-${attachment.name}`} className="attachment-bubble-item">
+              <strong>{attachment.name}</strong> ({attachment.size} bytes, {attachment.mime})
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {rendered.text.length > 0 ? (
+        <div className="message-bubble">
+          {message.role === "assistant" ? <Markdown content={rendered.text} /> : rendered.text}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function BottomAnchor({
-  turnsLength,
-  streamingFinalText,
-  traceLength,
-  sending,
-}: {
-  turnsLength: number;
-  streamingFinalText: string;
-  traceLength: number;
-  sending: boolean;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
+function useStickyBottom(
+  containerRef: RefObject<HTMLDivElement | null>,
+  options: {
+    selectionKey: string;
+    contentVersion: string;
+    sending: boolean;
+  },
+) {
+  const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+  const pinnedRef = useRef(true);
+  const lastSelectionKeyRef = useRef(options.selectionKey);
+  const lastSendingRef = useRef(options.sending);
+  const lastScrollHeightRef = useRef(0);
+
+  function updatePinnedState() {
+    const node = containerRef.current;
+    if (!node) return;
+    const next = isAtBottom(node.scrollTop, node.clientHeight, node.scrollHeight);
+    pinnedRef.current = next;
+    setIsPinnedToBottom(next);
+  }
+
+  function scrollToBottom() {
+    const node = containerRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+    pinnedRef.current = true;
+    setIsPinnedToBottom(true);
+  }
+
   useEffect(() => {
-    ref.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turnsLength, streamingFinalText, traceLength, sending]);
-  return <div ref={ref} />;
+    const node = containerRef.current;
+    if (!node) return;
+    updatePinnedState();
+    const onScroll = () => updatePinnedState();
+    node.addEventListener("scroll", onScroll);
+    return () => node.removeEventListener("scroll", onScroll);
+  }, [containerRef]);
+
+  useEffect(() => {
+    if (lastSelectionKeyRef.current !== options.selectionKey) {
+      lastSelectionKeyRef.current = options.selectionKey;
+      scrollToBottom();
+    }
+  }, [options.selectionKey]);
+
+  useEffect(() => {
+    if (options.sending && !lastSendingRef.current) {
+      scrollToBottom();
+    }
+    lastSendingRef.current = options.sending;
+  }, [options.sending]);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const grew = node.scrollHeight !== lastScrollHeightRef.current;
+    lastScrollHeightRef.current = node.scrollHeight;
+    if (grew && pinnedRef.current) {
+      scrollToBottom();
+    }
+  }, [containerRef, options.contentVersion]);
+
+  return { isPinnedToBottom, scrollToBottom };
 }
 
 function Composer(props: {
@@ -515,25 +508,105 @@ function Composer(props: {
   selectedAgentKey: string | null;
   onSelectAgent: (agentKey: string | null) => void;
   language: AppLanguage;
+  hideStop?: boolean;
+  onSubmitMessage?: (text: string, attachments: ComposerAttachment[]) => Promise<void>;
 }) {
+  const attachmentAllowedExtensions = useMemo(
+    () =>
+      parseAllowedAttachmentExtensions(
+        (
+          import.meta as ImportMeta & {
+            env?: { VITE_ATTACHMENT_ALLOWED_EXTENSIONS?: string };
+          }
+        ).env?.VITE_ATTACHMENT_ALLOWED_EXTENSIONS ?? DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
+      ),
+    [],
+  );
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
 
   async function submit() {
     setError(null);
     const text = value.trim();
-    if (text.length === 0) return;
+    if (text.length === 0 && attachments.length === 0) return;
+    const typeError = validateAttachmentTypes(attachments, attachmentAllowedExtensions);
+    if (typeError) {
+      setError(typeError);
+      return;
+    }
+    const validationError = validateAttachmentSizes(attachments);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    const payloadBytes = new TextEncoder().encode(
+      attachments.map((attachment) => `${attachment.name}:${attachment.size}:${attachment.mime}`).join("\n") +
+        text,
+    ).length;
+    if (payloadBytes > MAX_COMBINED_MESSAGE_BYTES) {
+      setError(`Message exceeds ${MAX_COMBINED_MESSAGE_BYTES} bytes`);
+      return;
+    }
     try {
+      if (props.onSubmitMessage) {
+        await props.onSubmitMessage(text, attachments);
+      } else {
+        await sendMessage(text, attachments);
+      }
       setValue("");
-      await sendMessage(text);
+      setAttachments([]);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
-      setValue(text);
+    }
+  }
+
+  async function appendAttachments(nextAttachments: ComposerAttachment[]) {
+    if (nextAttachments.length === 0) return;
+    const combined = [...attachments, ...nextAttachments];
+    const typeError = validateAttachmentTypes(combined, attachmentAllowedExtensions);
+    if (typeError) {
+      setError(typeError);
+      return;
+    }
+    const validationError = validateAttachmentSizes(combined);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError(null);
+    setAttachments(combined);
+  }
+
+  async function handleOpenFiles() {
+    try {
+      const opened = await getBridge().dialog.openFiles();
+      await appendAttachments(opened.map(mapBridgeAttachment));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files).filter(
+      (file) => !(file.size === 0 && file.type === ""),
+    );
+    try {
+      await appendAttachments(await Promise.all(files.map(readDroppedFile)));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     }
   }
 
   return (
-    <footer className="chat-composer">
+    <footer
+      className="chat-composer"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        void handleDrop(event);
+      }}
+    >
       <textarea
         value={value}
         placeholder={translate(props.language, "chat.placeholder")}
@@ -545,6 +618,27 @@ function Composer(props: {
           }
         }}
       />
+      {attachments.length > 0 ? (
+        <div className="attachment-list">
+          {attachments.map((attachment, index) => (
+            <div key={`${attachment.name}-${index}`} className="attachment-chip">
+              <span>
+                {attachment.name} · {formatBytes(attachment.size)}
+              </span>
+              <button
+                type="button"
+                className="attachment-remove"
+                aria-label={translate(props.language, "chat.attachRemove")}
+                onClick={() =>
+                  setAttachments((current) => current.filter((_, currentIndex) => currentIndex !== index))
+                }
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {error ? <div className="error">{error}</div> : null}
       <div className="row">
         <label className="agent-select">
@@ -564,12 +658,26 @@ function Composer(props: {
           </select>
         </label>
         <div style={{ display: "flex", gap: 8 }}>
-          {props.sending ? (
+          <button
+            type="button"
+            className="secondary icon-only-button"
+            onClick={() => {
+              void handleOpenFiles();
+            }}
+            title={translate(props.language, "chat.attachFiles")}
+            aria-label={translate(props.language, "chat.attachFiles")}
+          >
+            <IconPaperclip />
+          </button>
+          {props.sending && !props.hideStop ? (
             <button className="secondary" onClick={abortActiveTurn}>
               {translate(props.language, "chat.stop")}
             </button>
           ) : null}
-          <button disabled={props.sending || value.trim().length === 0} onClick={submit}>
+          <button
+            disabled={props.sending || (value.trim().length === 0 && attachments.length === 0)}
+            onClick={submit}
+          >
             {props.sending
               ? translate(props.language, "chat.sending")
               : translate(props.language, "chat.sendHint")}
@@ -578,4 +686,59 @@ function Composer(props: {
       </div>
     </footer>
   );
+}
+
+function mapBridgeAttachment(file: {
+  name: string;
+  size: number;
+  mime: string;
+  kind: "text" | "binary";
+  content: string;
+}): ComposerAttachment {
+  return {
+    name: file.name,
+    size: file.size,
+    mime: file.mime,
+    kind: file.kind,
+    content: file.content,
+  };
+}
+
+async function readDroppedFile(file: File): Promise<ComposerAttachment> {
+  const kind = await classifyDroppedFile(file);
+  return {
+    name: file.name,
+    size: file.size,
+    mime: file.type || (kind === "text" ? "text/plain" : "application/octet-stream"),
+    kind,
+    content:
+      kind === "text"
+        ? await file.text()
+        : toBase64(await file.arrayBuffer()),
+  };
+}
+
+async function classifyDroppedFile(file: File): Promise<"text" | "binary"> {
+  const extension = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")).toLowerCase() : "";
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".gz", ".deb", ".bin"].includes(extension)) {
+    return "binary";
+  }
+  if (file.type.startsWith("text/") || file.type.includes("json") || file.type.includes("xml")) {
+    return "text";
+  }
+  const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  return head.includes(0) ? "binary" : "text";
+}
+
+function toBase64(buffer: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return window.btoa(binary);
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

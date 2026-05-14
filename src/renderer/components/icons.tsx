@@ -84,3 +84,20 @@ export function IconChat() {
     </svg>
   );
 }
+
+export function IconArrowDown() {
+  return (
+    <svg {...baseProps}>
+      <path d="M12 5v14" />
+      <path d="M18 13l-6 6l-6 -6" />
+    </svg>
+  );
+}
+
+export function IconPaperclip() {
+  return (
+    <svg {...baseProps}>
+      <path d="M15 7l-6.5 6.5a3 3 0 1 0 4.2 4.2l7.1 -7.1a5 5 0 0 0 -7.1 -7.1l-7.8 7.8a7 7 0 1 0 9.9 9.9l6.4 -6.4" />
+    </svg>
+  );
+}

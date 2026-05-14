@@ -7,6 +7,7 @@ import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
 import { SearxngRuntime } from "./searxng-runtime.js";
 import { fetchUrl } from "./net/http-fetcher.js";
 import { runSearch } from "./net/web-search.js";
+import { openFilesDialog } from "./ipc/dialog.js";
 import {
   editFile,
   ensureScopeRoot,
@@ -14,6 +15,7 @@ import {
   readFile,
   resolveScopeRoot,
   writeFile,
+  writeBinaryFile,
   writeTmpScript,
   type WorkspaceScope,
 } from "./workspace-fs.js";
@@ -219,6 +221,17 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
+    "sa-agent:fs-write-binary",
+    (_event, scopePayload: unknown, relative: unknown, base64: unknown) =>
+      ipcResult(async () => {
+        const scope = parseScope(scopePayload);
+        if (typeof relative !== "string") throw new Error("path must be a string");
+        if (typeof base64 !== "string") throw new Error("base64 must be a string");
+        return writeBinaryFile(scope, relative, base64);
+      }),
+  );
+
+  ipcMain.handle(
     "sa-agent:fs-edit",
     (
       _event,
@@ -323,6 +336,10 @@ app.whenReady().then(async () => {
       await searxngRuntime.ensureRunning();
       return searxngRuntime.getStatus();
     }),
+  );
+
+  ipcMain.handle("sa-agent:dialog-open-files", () =>
+    ipcResult(async () => openFilesDialog()),
   );
 
   pythonRuntime.start().catch((error) => {

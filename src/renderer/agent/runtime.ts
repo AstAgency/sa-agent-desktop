@@ -19,6 +19,10 @@ import { getLiveMessages } from "./live-messages";
 import { retrieveRelevantSummaries } from "./search";
 import { maybeSummarize } from "./summarizer";
 import { buildWorkspaceTools, type WorkspaceToolActions } from "./tools";
+import {
+  extractToolResultText,
+  summarizeToolResultForHistory,
+} from "./tool-result-summary";
 import type {
   Agent as AgentRecord,
   AgentRole,
@@ -277,7 +281,12 @@ export class SessionRuntime {
     if (message.role === "user") return;
     if (message.role === "toolResult") {
       const isError = (message as { isError?: boolean }).isError === true;
-      const text = extractToolResultText(message);
+      const text = summarizeToolResultForHistory(message as unknown as {
+        toolName?: string;
+        isError?: boolean;
+        content?: Array<{ type: string; text?: string }>;
+        details?: Record<string, unknown> | null;
+      });
       this.updateToolCallStatus(
         (message as { toolCallId?: string }).toolCallId ?? "",
         isError ? "error" : "success",
@@ -361,7 +370,12 @@ export class SessionRuntime {
         return;
       }
       if (message.role === "toolResult") {
-        const text = extractToolResultText(message);
+        const text = summarizeToolResultForHistory(message as unknown as {
+          toolName?: string;
+          isError?: boolean;
+          content?: Array<{ type: string; text?: string }>;
+          details?: Record<string, unknown> | null;
+        });
         if (text.trim().length === 0) return;
         const saved = await appendMessage(this.input.sessionId, "tool", text, {
           tool_call_id: message.toolCallId,
@@ -503,7 +517,6 @@ export class SessionRuntime {
             // reasoning trace event and clear the live final-answer bubble.
             if (!round.hasToolCalls) {
               this.promoteToReasoning(round);
-              this.state = { ...this.state, streamingFinalText: "" };
             }
             const eventId = nextTraceEventId("tool");
             round.toolCallEventIds.set(id, eventId);
@@ -548,7 +561,6 @@ export class SessionRuntime {
         // make sure the trace shows this round had reasoning (an empty one).
         if (!round.hasToolCalls) {
           this.promoteToReasoning(round);
-          this.state = { ...this.state, streamingFinalText: "" };
           this.notify();
         }
         for (const toolCall of result.tool_calls) {
@@ -785,13 +797,6 @@ function extractAssistantToolCalls(message: PiMessage): OpenAIToolCallRecord[] {
       type: "function" as const,
       function: { name: block.name, arguments: JSON.stringify(block.arguments ?? {}) },
     }));
-}
-
-function extractToolResultText(message: PiMessage): string {
-  if (message.role !== "toolResult") return "";
-  return message.content
-    .map((block) => (block.type === "text" ? block.text : ""))
-    .join("");
 }
 
 function parseToolArguments(text: string): Record<string, unknown> {

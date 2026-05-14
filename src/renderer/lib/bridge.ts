@@ -1,4 +1,5 @@
 import type {
+  DialogOpenFileResult,
   FileEntry,
   PythonRuntimeStatus,
   RunPythonResult,
@@ -21,6 +22,7 @@ type Bridge = {
   fs: {
     read: (scope: WorkspaceScope, path: string) => Promise<string>;
     write: (scope: WorkspaceScope, path: string, content: string) => Promise<{ path: string }>;
+    writeBinary: (scope: WorkspaceScope, path: string, base64: string) => Promise<{ path: string }>;
     edit: (
       scope: WorkspaceScope,
       path: string,
@@ -42,6 +44,9 @@ type Bridge = {
     webSearch: (query: string, limit?: number) => Promise<string>;
     getSearchStatus: () => Promise<SearchStatus>;
     startSearch: () => Promise<SearchStatus>;
+  };
+  dialog: {
+    openFiles: () => Promise<DialogOpenFileResult[]>;
   };
 };
 
