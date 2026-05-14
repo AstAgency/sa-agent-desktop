@@ -16,7 +16,6 @@ export function AuthScreen() {
   const language = useClientState((state) => state.language);
   const [stage, setStage] = useState<Stage>({ kind: "email" });
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +49,7 @@ export function AuthScreen() {
     }
     setBusy(true);
     try {
-      await verifyEmailCode({ email: stage.email, code, name });
+      await verifyEmailCode({ email: stage.email, code, name: nameFromEmail(stage.email) });
     } catch (err) {
       setError(formatVerifyError(err, language));
     } finally {
@@ -62,9 +61,10 @@ export function AuthScreen() {
     setError(null);
     setBusy(true);
     try {
+      const devEmail = email.trim() || "dev@example.com";
       signInWithDevFallback({
-        email: email.trim() || "dev@example.com",
-        name: name.trim() || "Dev User",
+        email: devEmail,
+        name: nameFromEmail(devEmail) || "Dev User",
       });
     } finally {
       setBusy(false);
@@ -103,17 +103,6 @@ export function AuthScreen() {
             <p className="auth-sub">
               {translate(language, "auth.code.subtitle", { email: stage.email })}
             </p>
-            <label className="auth-field">
-              <span>{translate(language, "auth.name.label")}</span>
-              <input
-                type="text"
-                autoComplete="name"
-                placeholder={translate(language, "auth.name.placeholder")}
-                value={name}
-                disabled={busy}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
             <label className="auth-field">
               <span>{translate(language, "auth.code.label")}</span>
               <input
@@ -170,6 +159,12 @@ export function AuthScreen() {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function nameFromEmail(value: string): string {
+  const trimmed = value.trim();
+  const at = trimmed.indexOf("@");
+  return at > 0 ? trimmed.slice(0, at) : trimmed;
 }
 
 function formatEmailError(err: unknown, language: AppLanguage): string {
