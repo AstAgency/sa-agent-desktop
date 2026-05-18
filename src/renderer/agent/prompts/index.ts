@@ -33,3 +33,4 @@ export { SKILLS_POLICY_PROMPT, buildSkillsBlock } from "./skills-policy.js";
 export { ROLES_POLICY_PROMPT, buildRolesBlock } from "./roles-policy.js";
 export { buildOrchestrationBlock } from "./orchestration.js";
 export { TOOLS_MANIFEST_PROMPT } from "./tools-manifest.js";
+export { VISION_ANALYSIS_PROMPT } from "./vision-prompt.js";

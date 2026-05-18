@@ -21,6 +21,10 @@ type Bridge = {
   };
   fs: {
     read: (scope: WorkspaceScope, path: string) => Promise<string>;
+    readBinary: (
+      scope: WorkspaceScope,
+      path: string,
+    ) => Promise<{ base64: string; bytes: number }>;
     write: (scope: WorkspaceScope, path: string, content: string) => Promise<{ path: string }>;
     writeBinary: (scope: WorkspaceScope, path: string, base64: string) => Promise<{ path: string }>;
     edit: (

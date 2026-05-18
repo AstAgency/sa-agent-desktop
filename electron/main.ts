@@ -12,6 +12,7 @@ import {
   editFile,
   ensureScopeRoot,
   listFiles,
+  readBinaryFile,
   readFile,
   resolveScopeRoot,
   writeFile,
@@ -206,6 +207,14 @@ app.whenReady().then(async () => {
       const scope = parseScope(scopePayload);
       if (typeof relative !== "string") throw new Error("path must be a string");
       return readFile(scope, relative);
+    }),
+  );
+
+  ipcMain.handle("sa-agent:fs-read-binary", (_event, scopePayload: unknown, relative: unknown) =>
+    ipcResult(async () => {
+      const scope = parseScope(scopePayload);
+      if (typeof relative !== "string") throw new Error("path must be a string");
+      return readBinaryFile(scope, relative);
     }),
   );
 

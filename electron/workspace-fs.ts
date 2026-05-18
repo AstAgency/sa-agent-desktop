@@ -259,6 +259,18 @@ export async function readFile(scope: WorkspaceScope, relative: string): Promise
   return fs.readFile(resolved.absolute, "utf8");
 }
 
+export async function readBinaryFile(
+  scope: WorkspaceScope,
+  relative: string,
+): Promise<{ base64: string; bytes: number }> {
+  const resolved = await resolveRequestedPath(scope, relative);
+  if (resolved.kind === "namespace_root") {
+    throw new Error(`Cannot read namespace root as a file: ${resolved.namespace}`);
+  }
+  const buffer = await fs.readFile(resolved.absolute);
+  return { base64: buffer.toString("base64"), bytes: buffer.length };
+}
+
 export async function writeFile(
   scope: WorkspaceScope,
   relative: string,

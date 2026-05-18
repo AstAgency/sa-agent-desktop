@@ -2,10 +2,12 @@ export type CapabilityCategoryName =
   | "filesystem"
   | "python"
   | "network"
+  | "vision"
   | "agent_content"
   | "memory";
 
 export type CapabilityName =
+  | "analyze_image"
   | "edit_file"
   | "fetch_url"
   | "get_role"
@@ -33,6 +35,7 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
   { name: "run_python", category: "python" },
   { name: "fetch_url", category: "network" },
   { name: "web_search", category: "network" },
+  { name: "analyze_image", category: "vision" },
   { name: "get_skill", category: "agent_content" },
   { name: "get_role", category: "agent_content" },
   { name: "update_global_memory", category: "memory" },

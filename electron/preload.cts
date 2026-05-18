@@ -88,6 +88,12 @@ contextBridge.exposeInMainWorld("saAgent", {
     read(scope: WorkspaceScope, path: string): Promise<string> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-read", scope, path));
     },
+    readBinary(
+      scope: WorkspaceScope,
+      path: string,
+    ): Promise<{ base64: string; bytes: number }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:fs-read-binary", scope, path));
+    },
     write(scope: WorkspaceScope, path: string, content: string): Promise<{ path: string }> {
       return unwrap(ipcRenderer.invoke("sa-agent:fs-write", scope, path, content));
     },

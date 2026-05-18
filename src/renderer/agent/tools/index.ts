@@ -1,6 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
+import { analyzeImage } from "../../lib/api";
 import { getBridge } from "../../lib/bridge";
+import { VISION_ANALYSIS_PROMPT } from "../prompts";
 import type { AgentRole, AgentSkill, Project, WorkspaceScope } from "../../lib/types";
 import {
   formatGetRoleResult,
@@ -43,6 +45,33 @@ export type AgentContentLookups = {
   listSkillNames: () => string[];
   listRoleNames: () => string[];
 };
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  heic: "image/heic",
+  heif: "image/heif",
+};
+
+function imageMetaFromPath(path: string): { fileName: string; mimeType: string } {
+  const fileName = path.split(/[\\/]/).pop() || path;
+  const ext = fileName.includes(".")
+    ? fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase()
+    : "";
+  const mimeType = IMAGE_MIME_BY_EXT[ext];
+  if (!mimeType) {
+    throw new Error(
+      `Unsupported image extension ".${ext}". Supported: ${Object.keys(IMAGE_MIME_BY_EXT).join(", ")}`,
+    );
+  }
+  return { fileName, mimeType };
+}
 
 function textResult(text: string, details?: Record<string, unknown>) {
   return {
@@ -294,6 +323,31 @@ export function buildWorkspaceTools(
     },
   };
 
+  const analyzeImageTool: ToolDefinition = {
+    name: "analyze_image",
+    label: "Analyze image",
+    description:
+      "Analyze an image file and return a textual description of what it depicts. Any text present in the image (signs, documents, screenshots, tables) is transcribed verbatim. Pass only a path to an image in the workspace (use list_files to discover real paths); the analysis prompt is fixed.",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "Path to an image file relative to workspace root" }),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const path = pickString(args, "path");
+      const { fileName, mimeType } = imageMetaFromPath(path);
+      const { base64, bytes } = await fs.readBinary(scope, path);
+      const description = await analyzeImage({
+        imageBase64: base64,
+        fileName,
+        mimeType,
+        prompt: VISION_ANALYSIS_PROMPT,
+      });
+      return textResult(description, { path, bytes, mime_type: mimeType });
+    },
+  };
+
   const updateGlobalMemoryTool: ToolDefinition = {
     name: "update_global_memory",
     label: "Update global memory",
@@ -418,6 +472,7 @@ export function buildWorkspaceTools(
     listPythonPackagesTool,
     fetchUrlTool,
     webSearchTool,
+    analyzeImageTool,
     updateGlobalMemoryTool,
   ];
   if (agentContent.listSkillNames().length > 0) tools.push(getSkillTool);

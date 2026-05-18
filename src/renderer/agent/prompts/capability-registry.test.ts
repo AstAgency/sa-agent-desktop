@@ -9,6 +9,7 @@ import { buildToolsManifest } from "./build-tools-manifest.js";
 
 test("registry exposes list_python_packages and run_python", () => {
   assert.deepEqual(listAvailableCapabilityNames(CAPABILITY_REGISTRY), [
+    "analyze_image",
     "edit_file",
     "fetch_url",
     "get_role",
@@ -65,4 +66,21 @@ test("generated tools manifest does not re-list full capability inventory", () =
   assert.doesNotMatch(manifest, /Available capabilities \(and only these\):/);
   assert.doesNotMatch(manifest, /Unavailable capabilities/);
   assert.doesNotMatch(manifest, /get_skill \/ get_role: load the full body/i);
+});
+
+test("registry maps analyze_image to the vision category", () => {
+  const entry = CAPABILITY_REGISTRY.find(({ name }) => name === "analyze_image");
+  assert.deepEqual(entry, { name: "analyze_image", category: "vision" });
+});
+
+test("vision prompt blocks appear only when analyze_image is available", () => {
+  const withVision = buildCapabilitiesPrompt(CAPABILITY_REGISTRY);
+  assert.match(withVision, /- analyze_image to describe an image file/);
+  assert.match(buildToolsManifest(CAPABILITY_REGISTRY), /Vision \(analyze_image\):/);
+
+  const withoutVision = CAPABILITY_REGISTRY.filter(
+    ({ category }) => category !== "vision",
+  );
+  assert.doesNotMatch(buildCapabilitiesPrompt(withoutVision), /analyze_image/);
+  assert.doesNotMatch(buildToolsManifest(withoutVision), /Vision \(analyze_image\):/);
 });

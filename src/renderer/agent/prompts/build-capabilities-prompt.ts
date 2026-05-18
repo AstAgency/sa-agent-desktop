@@ -7,6 +7,7 @@ const CAPABILITY_CATEGORY_ORDER: readonly CapabilityCategoryName[] = [
   "filesystem",
   "python",
   "network",
+  "vision",
   "agent_content",
   "memory",
 ];
@@ -18,6 +19,8 @@ const CAPABILITY_CATEGORY_LINES: Record<CapabilityCategoryName, string> = {
     "- list_python_packages / run_python for bundled Python package discovery and execution in the workspace",
   network:
     "- fetch_url / web_search for public web content discovery and retrieval",
+  vision:
+    "- analyze_image to describe an image file and transcribe any text it contains",
   agent_content:
     "- get_skill / get_role to load the full body of an available skill or role",
   memory:

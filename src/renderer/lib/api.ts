@@ -34,6 +34,7 @@ import {
   setAuthSession,
 } from "./token-store";
 import { performAuthenticatedFetch } from "./auth-fetch";
+import { base64ToArrayBuffer, extractVisionDescription } from "./vision";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3000";
 const BASE_URL_STORAGE_KEY = "sa-agent.backend-url";
@@ -434,6 +435,49 @@ export function updateBillingLimits(
   options?: RequestOptions,
 ): Promise<Billing> {
   return request("PUT", "/v1/billing/limits", input, options);
+}
+
+// ============================================================================
+// Vision
+// ============================================================================
+
+export type AnalyzeImageInput = {
+  /** Raw image bytes encoded as base64 (no data: prefix). */
+  imageBase64: string;
+  /** File name sent in the multipart part, e.g. "picture.jpg". */
+  fileName: string;
+  /** MIME type of the image, e.g. "image/jpeg". */
+  mimeType: string;
+  /** Instruction prompt describing what to extract from the image. */
+  prompt: string;
+};
+
+export async function analyzeImage(
+  input: AnalyzeImageInput,
+  options?: RequestOptions,
+): Promise<string> {
+  const url = `${getBackendUrl()}/v1/vision/analyze`;
+  const form = new FormData();
+  form.append("text", input.prompt);
+  form.append(
+    "image",
+    new Blob([base64ToArrayBuffer(input.imageBase64)], { type: input.mimeType }),
+    input.fileName,
+  );
+  const response = await fetchWithAuth(url, {
+    method: "POST",
+    body: form,
+    signal: options?.signal,
+  });
+  if (!response.ok) {
+    const message = await readErrorMessage(response);
+    throw new Error(`${response.status} POST /v1/vision/analyze: ${message}`);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return extractVisionDescription((await response.json()) as unknown);
+  }
+  return (await response.text()).trim();
 }
 
 // ============================================================================
