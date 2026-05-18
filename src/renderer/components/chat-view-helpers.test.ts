@@ -4,6 +4,7 @@ import {
   buildComposerMessage,
   extractRenderedUserMessageParts,
   formatAttachmentsBlock,
+  getInFlightTurn,
   getVisibleTurns,
   groupTurns,
   isAtBottom,
@@ -151,6 +152,41 @@ test("getVisibleTurns hides the trailing in-flight turn while live trace is rend
   assert.equal(turns.length, 1);
   assert.equal(getVisibleTurns(turns, true).length, 0);
   assert.equal(getVisibleTurns(turns, false).length, 1);
+});
+
+test("getInFlightTurn returns exactly the turn getVisibleTurns hides while sending", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "read file" }),
+    message({
+      id: "a1",
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call-1",
+          type: "function",
+          function: { name: "read_file", arguments: "{\"path\":\"a.txt\"}" },
+        },
+      ],
+    }),
+  ]);
+
+  const inFlight = getInFlightTurn(turns, true);
+  assert.equal(inFlight?.userMessage?.content, "read file");
+  // It is precisely the turn removed from the visible list.
+  assert.equal(getVisibleTurns(turns, true).length, turns.length - 1);
+  // Not sending → nothing in flight.
+  assert.equal(getInFlightTurn(turns, false), null);
+});
+
+test("getInFlightTurn returns null when the trailing turn already has an answer", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "hi" }),
+    message({ id: "a1", role: "assistant", content: "done" }),
+  ]);
+
+  assert.equal(getInFlightTurn(turns, true), null);
+  assert.equal(getVisibleTurns(turns, true).length, 1);
 });
 
 test("formatAttachmentsBlock serializes attachments into the inline envelope", () => {

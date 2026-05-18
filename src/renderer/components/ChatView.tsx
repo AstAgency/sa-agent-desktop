@@ -30,6 +30,7 @@ import {
   buildHistoricalTrace,
   DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS,
   extractRenderedUserMessageParts,
+  getInFlightTurn,
   getVisibleTurns,
   groupTurns,
   insertTextAtSelection,
@@ -68,6 +69,7 @@ export function ChatView() {
 
   const turns = useMemo(() => groupTurns(rawMessages), [rawMessages]);
   const visibleTurns = useMemo(() => getVisibleTurns(turns, sending), [turns, sending]);
+  const inFlightTurn = useMemo(() => getInFlightTurn(turns, sending), [turns, sending]);
   const historyRef = useRef<HTMLDivElement | null>(null);
   const selectionKey =
     selection.kind === "session"
@@ -78,7 +80,7 @@ export function ChatView() {
   const { isPinnedToBottom, scrollToBottom } = useStickyBottom(historyRef, {
     selectionKey,
     sending,
-    contentVersion: `${visibleTurns.length}:${runtimeTrace.length}:${streamingFinalText.length}:${Number(Boolean(lastStreamError))}`,
+    contentVersion: `${visibleTurns.length}:${Number(Boolean(inFlightTurn))}:${runtimeTrace.length}:${streamingFinalText.length}:${Number(Boolean(lastStreamError))}`,
   });
   const showLanding = selection.kind === "none";
 
@@ -139,6 +141,7 @@ export function ChatView() {
             ))}
             {sending ? (
               <LiveTurn
+                userMessage={inFlightTurn?.userMessage ?? null}
                 trace={runtimeTrace}
                 streamingFinalText={streamingFinalText}
                 language={language}
@@ -284,16 +287,19 @@ function TurnView({ turn, language }: { turn: ChatTurn; language: AppLanguage })
 }
 
 function LiveTurn({
+  userMessage,
   trace,
   streamingFinalText,
   language,
 }: {
+  userMessage: Message | null;
   trace: RuntimeTraceEvent[];
   streamingFinalText: string;
   language: AppLanguage;
 }) {
   return (
     <div className="chat-turn live">
+      {userMessage ? <MessageView message={userMessage} language={language} /> : null}
       <RuntimeBlock trace={trace} language={language} live defaultExpanded={trace.length > 0} />
       {streamingFinalText.length > 0 ? (
         <div className="message-row assistant">

@@ -29,16 +29,32 @@ export type ChatTurn = {
   finalAssistant: Message | null;
 };
 
+function isInFlightTurn(turn: ChatTurn): boolean {
+  return (
+    turn.finalAssistant === null &&
+    (turn.userMessage !== null ||
+      turn.reasoningMessages.length > 0 ||
+      turn.traceMessages.length > 0)
+  );
+}
+
 export function getVisibleTurns(turns: ChatTurn[], sending: boolean): ChatTurn[] {
   if (!sending || turns.length === 0) return turns;
   const lastTurn = turns[turns.length - 1];
   if (!lastTurn) return turns;
-  const isInFlightTurn =
-    lastTurn.finalAssistant === null &&
-    (lastTurn.userMessage !== null ||
-      lastTurn.reasoningMessages.length > 0 ||
-      lastTurn.traceMessages.length > 0);
-  return isInFlightTurn ? turns.slice(0, -1) : turns;
+  return isInFlightTurn(lastTurn) ? turns.slice(0, -1) : turns;
+}
+
+/**
+ * The turn {@link getVisibleTurns} slices off while a response is generating.
+ * The live UI renders this separately so the user's just-sent message stays
+ * visible for the whole generation instead of disappearing until it ends.
+ */
+export function getInFlightTurn(turns: ChatTurn[], sending: boolean): ChatTurn | null {
+  if (!sending || turns.length === 0) return null;
+  const lastTurn = turns[turns.length - 1];
+  if (!lastTurn) return null;
+  return isInFlightTurn(lastTurn) ? lastTurn : null;
 }
 
 export function groupTurns(messages: Message[]): ChatTurn[] {
