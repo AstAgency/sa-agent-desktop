@@ -35,6 +35,7 @@
     "src/renderer/agent/prompts/build-capabilities-prompt.ts",
     "src/renderer/agent/prompts/build-tools-manifest.ts",
     "src/renderer/components/chat-view-helpers.ts",
-    "src/renderer/components/chat-view-helpers.test.ts"
+    "src/renderer/components/chat-view-helpers.test.ts",
+    "src/renderer/state/navigation-lock.test.ts"
   ]
 }

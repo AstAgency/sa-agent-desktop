@@ -9,7 +9,9 @@ import {
   isAtBottom,
   nextAvailableAttachmentPath,
   parseAllowedAttachmentExtensions,
+  insertTextAtSelection,
   type PersistedAttachment,
+  validateAttachmentSizes,
   validateAttachmentTypes,
   type ComposerAttachment,
 } from "./chat-view-helpers.js";
@@ -211,6 +213,47 @@ test("validateAttachmentTypes enforces env-configured extension allowlist", () =
   );
 });
 
+test("default attachment allowlist includes common image formats", () => {
+  const allowed = parseAllowedAttachmentExtensions(undefined);
+  assert.equal(allowed.has(".png"), true);
+  assert.equal(allowed.has(".jpg"), true);
+  assert.equal(allowed.has(".webp"), true);
+});
+
+test("validateAttachmentTypes accepts pasted images with the default allowlist", () => {
+  const allowed = parseAllowedAttachmentExtensions(undefined);
+  assert.equal(
+    validateAttachmentTypes(
+      [
+        {
+          name: "screenshot.png",
+          size: 10,
+          mime: "image/png",
+          kind: "binary",
+          content: "AA==",
+        },
+      ],
+      allowed,
+    ),
+    null,
+  );
+});
+
+test("validateAttachmentSizes ignores persisted workspace attachments", () => {
+  assert.equal(
+    validateAttachmentSizes([
+      {
+        name: "agents_arch.png",
+        size: 5 * 1024 * 1024,
+        mime: "image/png",
+        kind: "binary",
+        workspacePath: "agents_arch.png",
+      },
+    ]),
+    null,
+  );
+});
+
 test("extractRenderedUserMessageParts hides attachment control text and keeps user text", () => {
   const content = buildComposerMessage("Проверь квитанцию", [
     {
@@ -232,4 +275,15 @@ test("extractRenderedUserMessageParts hides attachment control text and keeps us
 test("nextAvailableAttachmentPath appends numeric suffix for collisions", () => {
   const next = nextAvailableAttachmentPath("Квитанция.pdf", new Set(["Квитанция.pdf", "Квитанция (2).pdf"]));
   assert.equal(next, "Квитанция (3).pdf");
+});
+
+test("insertTextAtSelection replaces the active selection and returns next caret", () => {
+  assert.deepEqual(insertTextAtSelection("hello world", "beautiful ", 6, 6), {
+    nextValue: "hello beautiful world",
+    nextCaret: 16,
+  });
+  assert.deepEqual(insertTextAtSelection("hello world", "planet", 6, 11), {
+    nextValue: "hello planet",
+    nextCaret: 12,
+  });
 });

@@ -15,7 +15,7 @@ export type DialogOpenFileResult = {
 export const MAX_DIALOG_FILE_BYTES = 1 * 1024 * 1024;
 export const MAX_DIALOG_TOTAL_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS =
-  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt";
+  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.svg";
 
 const TEXT_MIME_BY_EXTENSION: Record<string, string> = {
   ".css": "text/css",

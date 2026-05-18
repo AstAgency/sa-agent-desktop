@@ -16,6 +16,7 @@ import {
   toggleSidebarCollapsed,
   useClientState,
 } from "../state/store";
+import { getNavigationLockReason, isNavigationLocked } from "../state/navigation-lock";
 import { openProjectFolder, openGlobalRoot } from "../lib/workspace-folders";
 import {
   IconChat,
@@ -40,8 +41,10 @@ export function Sidebar() {
   const projects = useClientState((state) => state.projects);
   const projectSessions = useClientState((state) => state.projectSessions);
   const selection = useClientState((state) => state.selection);
+  const navigationLocked = useClientState((state) => isNavigationLocked(state));
   const collapsed = useClientState((state) => state.sidebarCollapsed);
   const language = useClientState((state) => state.language);
+  const navigationLockReason = getNavigationLockReason(language);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeletePending | null>(null);
 
@@ -80,16 +83,18 @@ export function Sidebar() {
           <div className="sidebar-collapsed-rail">
             <button
               className="icon-button"
+              disabled={navigationLocked}
               onClick={startNewGlobalSession}
-              title={translate(language, "sidebar.globalSessions")}
+              title={navigationLocked ? navigationLockReason : translate(language, "sidebar.globalSessions")}
               aria-label={translate(language, "sidebar.globalSessions")}
             >
               <IconChat />
             </button>
             <button
               className="icon-button"
+              disabled={navigationLocked}
               onClick={() => setShowProjectModal(true)}
-              title={translate(language, "sidebar.projects")}
+              title={navigationLocked ? navigationLockReason : translate(language, "sidebar.projects")}
               aria-label={translate(language, "sidebar.projects")}
             >
               <IconFolder />
@@ -100,7 +105,11 @@ export function Sidebar() {
             <div className="sidebar-section">
               <div className="sidebar-section-title">
                 <span>{translate(language, "sidebar.globalSessions")}</span>
-                <button onClick={startNewGlobalSession}>
+                <button
+                  disabled={navigationLocked}
+                  title={navigationLocked ? navigationLockReason : undefined}
+                  onClick={startNewGlobalSession}
+                >
                   {translate(language, "sidebar.new")}
                 </button>
               </div>
@@ -115,6 +124,8 @@ export function Sidebar() {
                     displayName={session.display_name}
                     active={selection.kind === "session" && selection.sessionId === session.id}
                     language={language}
+                    disabled={navigationLocked}
+                    disabledReason={navigationLockReason}
                     onSelect={() => selectSession(session.id)}
                     onDelete={() =>
                       setPendingDelete({ kind: "session", id: session.id, name: session.display_name })
@@ -127,7 +138,11 @@ export function Sidebar() {
             <div className="sidebar-section sidebar-projects">
               <div className="sidebar-section-title">
                 <span>{translate(language, "sidebar.projects")}</span>
-                <button onClick={() => setShowProjectModal(true)}>
+                <button
+                  disabled={navigationLocked}
+                  title={navigationLocked ? navigationLockReason : undefined}
+                  onClick={() => setShowProjectModal(true)}
+                >
                   {translate(language, "sidebar.new")}
                 </button>
               </div>
@@ -149,6 +164,8 @@ export function Sidebar() {
                         void loadProjectSessions(project.id);
                       }
                     }}
+                    disabled={navigationLocked}
+                    disabledReason={navigationLockReason}
                     onNewChat={() => startNewProjectSession(project.id)}
                     onSelectSession={(sessionId) => selectSession(sessionId)}
                     onDeleteProject={() =>
@@ -251,6 +268,8 @@ function ProjectGroup(props: {
   sessions: { id: string; display_name: string }[];
   selection: { kind: string; sessionId?: string; projectId?: string };
   language: AppLanguage;
+  disabled: boolean;
+  disabledReason: string;
   onLoadSessions: () => void;
   onNewChat: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -299,6 +318,8 @@ function ProjectGroup(props: {
             <div className="row-actions">
               <button
                 className="inline-link"
+                disabled={props.disabled}
+                title={props.disabled ? props.disabledReason : undefined}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -310,8 +331,9 @@ function ProjectGroup(props: {
               <button
                 ref={kebabRef}
                 className={`row-kebab${menuOpen ? " active" : ""}`}
+                disabled={props.disabled}
                 aria-label={translate(props.language, "menu.open")}
-                title={translate(props.language, "menu.open")}
+                title={props.disabled ? props.disabledReason : translate(props.language, "menu.open")}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -338,6 +360,8 @@ function ProjectGroup(props: {
               props.selection.sessionId === session.id
             }
             language={props.language}
+            disabled={props.disabled}
+            disabledReason={props.disabledReason}
             onSelect={() => props.onSelectSession(session.id)}
             onDelete={() => props.onDeleteSession(session.id, session.display_name)}
           />
@@ -359,6 +383,8 @@ function SessionRow(props: {
   displayName: string;
   active: boolean;
   language: AppLanguage;
+  disabled: boolean;
+  disabledReason: string;
   onSelect: () => void;
   onDelete: () => void;
 }) {
@@ -402,14 +428,20 @@ function SessionRow(props: {
   return (
     <li>
       <div className={`sidebar-row${props.active ? " active" : ""}${menuOpen ? " menu-open" : ""}`}>
-        <button className="row-button" onClick={props.onSelect}>
+        <button
+          className="row-button"
+          disabled={props.disabled}
+          title={props.disabled ? props.disabledReason : undefined}
+          onClick={props.onSelect}
+        >
           <span className="row-label">{props.displayName}</span>
         </button>
         <button
           ref={kebabRef}
           className={`row-kebab${menuOpen ? " active" : ""}`}
+          disabled={props.disabled}
           aria-label={translate(props.language, "menu.open")}
-          title={translate(props.language, "menu.open")}
+          title={props.disabled ? props.disabledReason : translate(props.language, "menu.open")}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

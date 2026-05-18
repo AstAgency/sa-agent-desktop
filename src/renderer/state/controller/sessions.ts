@@ -6,6 +6,7 @@ import {
 } from "../../lib/api";
 import type { Session, WorkspaceScope } from "../../lib/types";
 import { getState, setState, type ClientState } from "../store";
+import { isNavigationLocked } from "../navigation-lock";
 import { disposeSessionRuntime } from "./registry";
 
 const DISPLAY_NAME_MAX = 30;
@@ -34,6 +35,7 @@ export async function renameSession(sessionId: string, displayName: string) {
 }
 
 export async function removeSession(sessionId: string) {
+  if (isNavigationLocked(getState())) return;
   await deleteSessionRequest(sessionId);
   setState((state) => {
     const nextGlobalSessions = state.globalSessions.filter((existing) => existing.id !== sessionId);
