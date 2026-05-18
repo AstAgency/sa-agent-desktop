@@ -6,6 +6,7 @@ import {
   updateProjectMemory,
 } from "../../lib/api";
 import { getState, setState } from "../store";
+import { isNavigationLocked } from "../navigation-lock";
 import { disposeSessionRuntime } from "./registry";
 
 export async function loadProjectSessions(projectId: string) {
@@ -17,6 +18,7 @@ export async function loadProjectSessions(projectId: string) {
 }
 
 export async function createProjectAndSelect(input: { name: string; description?: string }) {
+  if (isNavigationLocked(getState())) return null;
   const project = await createProjectFromInput(input);
   setState((state) => ({ ...state, selection: { kind: "new-project", projectId: project.id } }));
   return project;
@@ -56,6 +58,7 @@ export async function renameProject(projectId: string, name: string) {
 }
 
 export async function removeProject(projectId: string) {
+  if (isNavigationLocked(getState())) return;
   await deleteProjectRequest(projectId);
   const stateBefore = getState();
   const affectedSessionIds = (stateBefore.projectSessions[projectId] ?? []).map(

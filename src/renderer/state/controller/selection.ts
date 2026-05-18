@@ -1,7 +1,9 @@
-import { setState } from "../store";
+import { getState, setState } from "../store";
+import { isNavigationLocked } from "../navigation-lock";
 import { hydrateSession } from "./sessions";
 
 export function selectSession(sessionId: string) {
+  if (isNavigationLocked(getState())) return;
   setState((state) => ({
     ...state,
     selection: { kind: "session", sessionId },
@@ -12,6 +14,7 @@ export function selectSession(sessionId: string) {
 }
 
 export function startNewGlobalSession() {
+  if (isNavigationLocked(getState())) return;
   setState((state) => ({
     ...state,
     selection: { kind: "new-global" },
@@ -21,6 +24,7 @@ export function startNewGlobalSession() {
 }
 
 export function startNewProjectSession(projectId: string) {
+  if (isNavigationLocked(getState())) return;
   setState((state) => ({
     ...state,
     selection: { kind: "new-project", projectId },
@@ -30,6 +34,7 @@ export function startNewProjectSession(projectId: string) {
 }
 
 export function clearSelection() {
+  if (isNavigationLocked(getState())) return;
   setState((state) => ({ ...state, selection: { kind: "none" }, streamingFinalText: "",
     runtimeTrace: [] }));
 }

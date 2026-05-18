@@ -404,7 +404,7 @@ function useThinkingWord(language: AppLanguage): string {
   useEffect(() => {
     const id = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % list.length);
-    }, 1200);
+    }, 5000);
     return () => window.clearInterval(id);
   }, [list.length]);
   return list[index] ?? list[0] ?? "";
