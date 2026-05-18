@@ -1,12 +1,13 @@
 import type { UserMessage } from "@earendil-works/pi-ai";
-import { appendMessage } from "../../lib/api";
-import { getLiveMessages } from "../live-messages";
-import { maybeSummarize } from "../summarizer";
-import type { RuntimeInternals } from "./types";
+import { appendMessage } from "../../lib/api.js";
+import { getLiveMessages } from "../live-messages.js";
+import { maybeSummarize } from "../summarizer.js";
+import type { RuntimeInternals } from "./types.js";
 
 export async function sendUserMessage(rt: RuntimeInternals, content: string): Promise<void> {
   const trimmed = content.trim();
   if (trimmed.length === 0) throw new Error("Empty message");
+  rt.lastRunError = null;
 
   const userMessage = await appendMessage(rt.input.sessionId, "user", content);
   rt.persistedMessageIds.add(userMessage.id);
@@ -43,6 +44,12 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
     rt.activeRound = null;
     rt.state = { ...rt.state, isStreaming: false, streamingFinalText: "" };
     rt.notify();
+  }
+
+  if (rt.lastRunError) {
+    const error = rt.lastRunError;
+    rt.lastRunError = null;
+    throw error;
   }
 
   await maybeRunSummarization(rt);

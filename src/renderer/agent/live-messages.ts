@@ -1,4 +1,4 @@
-import type { Message, Summary } from "../lib/types";
+import type { Message, Summary } from "../lib/types.js";
 
 /**
  * Returns messages that are not covered by any summary. Per the contract,

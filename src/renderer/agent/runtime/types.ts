@@ -97,6 +97,7 @@ export interface RuntimeInternals {
   state: SessionRuntimeState;
   model: string;
   inflightAbort: AbortController | null;
+  lastRunError: unknown | null;
   currentTurnUserText: string;
   // Id of the user message for the in-flight turn. Execution events are
   // tagged with it so the UI can group a turn's events and keep them after

@@ -1,6 +1,6 @@
-import { chatCompletion, createSummary } from "../lib/api";
-import { getBridge } from "../lib/bridge";
-import type { Message, Summary } from "../lib/types";
+import { chatCompletion, createSummary } from "../lib/api.js";
+import { getBridge } from "../lib/bridge.js";
+import type { Message, Summary } from "../lib/types.js";
 
 export const SUMMARIZE_THRESHOLD = 30;
 export const SUMMARIZE_BUFFER = 10;

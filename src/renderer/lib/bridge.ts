@@ -5,7 +5,7 @@ import type {
   RunPythonResult,
   SearchStatus,
   WorkspaceScope,
-} from "./types";
+} from "./types.js";
 
 type Bridge = {
   python: {

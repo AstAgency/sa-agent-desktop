@@ -245,6 +245,7 @@ export async function runStream(
     stream.push({ type: "done", reason: stopReason, message: { ...partial } });
     stream.end();
   } catch (error) {
+    rt.lastRunError = error;
     const message = error instanceof Error ? error.message : String(error);
     const aborted = abortController.signal.aborted;
     // Don't discard text the user already saw — keep it in the persistent

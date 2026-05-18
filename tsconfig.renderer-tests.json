@@ -29,6 +29,8 @@
     "src/renderer/agent/transcript.test.ts",
     "src/renderer/agent/runtime/converters.ts",
     "src/renderer/agent/runtime/converters.test.ts",
+    "src/renderer/agent/runtime/message-flow.ts",
+    "src/renderer/agent/runtime/message-flow.test.ts",
     "src/renderer/agent/prompt-builder.ts",
     "src/renderer/agent/prompt-builder.test.ts",
     "src/renderer/agent/runtime/tool-policy.ts",
