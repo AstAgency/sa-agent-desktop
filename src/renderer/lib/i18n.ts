@@ -53,6 +53,34 @@ const dictionaries = {
     "boot.retry": "Retry",
     "auth.title": "Sign in",
     "auth.subtitle": "Enter your email to receive a one-time code.",
+    "auth.hero.subtitle":
+      "An AI workspace where agents work together, learn from context, and help solve real tasks.",
+    "auth.intro":
+      "Sign in to access the agent system and continue working with your projects and context.",
+    "auth.platformLink": "More about the platform and the agent ecosystem →",
+    "auth.landing.title": "An AI-agent system for any task",
+    "auth.landing.subtitle":
+      "SA-Agent Desktop is a workspace where a specialized agent is matched to every task.",
+    "auth.landing.description":
+      "Requirements analysis, architecture, development, documentation, research, decomposition, process automation — agents work together and keep the project context.",
+    "auth.landing.card.agent.title": "An agent for any task",
+    "auth.landing.card.agent.body":
+      "Systems analysts, architects, reviewers, researchers, developers and orchestrator agents in one system.",
+    "auth.landing.card.learning.title": "Learns while working",
+    "auth.landing.card.learning.body":
+      "The agent remembers context, interaction style and project details as you talk.",
+    "auth.landing.card.context.title": "Shared project context",
+    "auth.landing.card.context.body":
+      "History, documents, tasks and decisions stay linked together.",
+    "auth.landing.card.desktop.title": "Desktop-first workflow",
+    "auth.landing.card.desktop.body":
+      "Fast access to agents and projects without browser routine.",
+    "auth.landing.card.multi.title": "Multi-agent work",
+    "auth.landing.card.multi.body":
+      "One agent can bring in others to solve complex tasks.",
+    "auth.landing.highlight.title": "Not just a chat with AI.",
+    "auth.landing.highlight.body":
+      "It is an operating system for working with AI agents.",
     "auth.email.label": "Email",
     "auth.email.placeholder": "you@example.com",
     "auth.email.submit": "Send code",
@@ -201,6 +229,34 @@ const dictionaries = {
     "boot.retry": "Повторить",
     "auth.title": "Вход",
     "auth.subtitle": "Введите email — мы пришлём одноразовый код.",
+    "auth.hero.subtitle":
+      "AI workspace, где агенты работают вместе, обучаются на контексте и помогают решать реальные задачи.",
+    "auth.intro":
+      "Войдите, чтобы получить доступ к системе агентов и продолжить работу с вашими проектами и контекстом.",
+    "auth.platformLink": "Подробнее о платформе и экосистеме агентов →",
+    "auth.landing.title": "Система AI-агентов для любых задач",
+    "auth.landing.subtitle":
+      "SA-Agent Desktop — это рабочая среда, где под каждую задачу находится специализированный агент.",
+    "auth.landing.description":
+      "Анализ требований, архитектура, разработка, документация, исследование, декомпозиция, автоматизация процессов — агенты работают вместе и сохраняют контекст проекта.",
+    "auth.landing.card.agent.title": "Агент под любую задачу",
+    "auth.landing.card.agent.body":
+      "Системные аналитики, архитекторы, ревьюеры, исследователи, разработчики и orchestrator-агенты в одной системе.",
+    "auth.landing.card.learning.title": "Обучение во время работы",
+    "auth.landing.card.learning.body":
+      "Агент запоминает контекст, стиль взаимодействия и детали проекта по мере общения.",
+    "auth.landing.card.context.title": "Общий контекст проекта",
+    "auth.landing.card.context.body":
+      "История, документы, задачи и решения остаются связанными между собой.",
+    "auth.landing.card.desktop.title": "Desktop-first workflow",
+    "auth.landing.card.desktop.body":
+      "Быстрый доступ к агентам и проектам без браузерной рутины.",
+    "auth.landing.card.multi.title": "Мульти-агентная работа",
+    "auth.landing.card.multi.body":
+      "Один агент может подключать других для решения сложных задач.",
+    "auth.landing.highlight.title": "Не просто чат с AI.",
+    "auth.landing.highlight.body":
+      "Это операционная система для работы с AI-агентами.",
     "auth.email.label": "Email",
     "auth.email.placeholder": "you@example.com",
     "auth.email.submit": "Отправить код",

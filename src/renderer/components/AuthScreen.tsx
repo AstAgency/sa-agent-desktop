@@ -12,6 +12,17 @@ type Stage =
   | { kind: "email" }
   | { kind: "code"; email: string };
 
+const PLATFORM_URL =
+  "https://astanov.systems/?utm_source=sa_agent_desktop&utm_medium=desktop_app&utm_campaign=auth_screen";
+
+const LANDING_CARDS = [
+  "agent",
+  "learning",
+  "context",
+  "desktop",
+  "multi",
+] as const;
+
 export function AuthScreen() {
   const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true;
   const language = useClientState((state) => state.language);
@@ -74,8 +85,47 @@ export function AuthScreen() {
 
   return (
     <section className="auth-screen">
-      <div className="auth-card">
-        <h1>{translate(language, "app.title")}</h1>
+      <aside className="auth-pitch">
+        <div className="auth-pitch-inner">
+          <span className="auth-pitch-eyebrow">{translate(language, "app.title")}</span>
+          <h2 className="auth-pitch-title">
+            {translate(language, "auth.landing.title")}
+          </h2>
+          <p className="auth-pitch-subtitle">
+            {translate(language, "auth.landing.subtitle")}
+          </p>
+          <p className="auth-pitch-description">
+            {translate(language, "auth.landing.description")}
+          </p>
+          <ul className="auth-pitch-cards">
+            {LANDING_CARDS.map((card) => (
+              <li key={card} className="auth-pitch-card">
+                <strong>
+                  {translate(language, `auth.landing.card.${card}.title`)}
+                </strong>
+                <span>
+                  {translate(language, `auth.landing.card.${card}.body`)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <blockquote className="auth-pitch-highlight">
+            <strong>{translate(language, "auth.landing.highlight.title")}</strong>
+            <span>{translate(language, "auth.landing.highlight.body")}</span>
+          </blockquote>
+        </div>
+      </aside>
+
+      <div className="auth-panel">
+        <header className="auth-hero">
+          <h1>{translate(language, "app.title")}</h1>
+          <p className="auth-hero-sub">
+            {translate(language, "auth.hero.subtitle")}
+          </p>
+        </header>
+
+        <div className="auth-card">
+        <p className="auth-intro">{translate(language, "auth.intro")}</p>
         {stage.kind === "email" ? (
           <form className="auth-form" onSubmit={handleEmailSubmit}>
             <h2>{translate(language, "auth.title")}</h2>
@@ -155,6 +205,16 @@ export function AuthScreen() {
             </button>
           </div>
         ) : null}
+        </div>
+
+        <a
+          className="auth-platform-link"
+          href={PLATFORM_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {translate(language, "auth.platformLink")}
+        </a>
       </div>
     </section>
   );
