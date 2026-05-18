@@ -13,11 +13,14 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
   rt.roundIndex = 0;
   rt.activeRound = null;
   rt.currentTurnToolResults = [];
+  // New turn: its execution events are tagged with this id. The trace itself
+  // is NOT reset — it is cumulative per session so the timeline persists
+  // across turns; events are grouped/scoped by turnId.
+  rt.currentTurnId = userMessage.id;
   rt.state = {
     ...rt.state,
     messages: [...rt.state.messages, userMessage],
     streamingFinalText: "",
-    trace: [],
     isStreaming: true,
   };
   rt.currentTurnUserText = content;

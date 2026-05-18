@@ -37,6 +37,7 @@ export class SessionRuntime implements RuntimeInternals {
   model: string;
   inflightAbort: AbortController | null = null;
   currentTurnUserText = "";
+  currentTurnId = "";
   persistenceChain: Promise<unknown> = Promise.resolve();
   activeRound: ActiveRound | null = null;
   roundIndex = 0;

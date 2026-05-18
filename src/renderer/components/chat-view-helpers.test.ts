@@ -7,6 +7,7 @@ import {
   getInFlightTurn,
   getVisibleTurns,
   groupTurns,
+  selectTurnEvents,
   isAtBottom,
   nextAvailableAttachmentPath,
   parseAllowedAttachmentExtensions,
@@ -118,6 +119,38 @@ test("groupTurns leaves a silent tool-only turn without a fabricated answer", ()
   assert.equal(turns[0]?.finalAssistant, null);
   assert.equal(turns[0]?.reasoningMessages.length, 0);
   assert.equal(turns[0]?.traceMessages.length, 2);
+});
+
+test("selectTurnEvents returns only the events tagged with the turn's user message id", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "first" }),
+    message({ id: "a1", role: "assistant", content: "done one" }),
+    message({ id: "u2", role: "user", content: "second" }),
+    message({ id: "a2", role: "assistant", content: "done two" }),
+  ]);
+  const events = [
+    { id: "e1", turnId: "u1", kind: "reasoning" as const },
+    { id: "e2", turnId: "u2", kind: "tool_call" as const },
+    { id: "e3", turnId: "u1", kind: "tool_call" as const },
+    { id: "e4", kind: "reasoning" as const },
+  ];
+
+  assert.deepEqual(
+    selectTurnEvents(events, turns[0]!).map((e) => e.id),
+    ["e1", "e3"],
+  );
+  assert.deepEqual(
+    selectTurnEvents(events, turns[1]!).map((e) => e.id),
+    ["e2"],
+  );
+});
+
+test("selectTurnEvents returns nothing for an orphan turn without a user message", () => {
+  const turns = groupTurns([
+    message({ id: "a1", role: "assistant", content: "orphan" }),
+  ]);
+  const events = [{ id: "e1", turnId: "x", kind: "reasoning" as const }];
+  assert.deepEqual(selectTurnEvents(events, turns[0]!), []);
 });
 
 test("isAtBottom respects threshold and treats short content as pinned", () => {

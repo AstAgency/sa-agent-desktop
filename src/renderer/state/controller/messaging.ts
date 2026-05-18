@@ -32,8 +32,9 @@ export async function sendMessage(
   if (!state.profile) throw new Error("Profile not loaded");
 
   setLastStreamError(null);
-  setState((s) => ({ ...s, sendingMessage: true, streamingFinalText: "",
-    runtimeTrace: [] }));
+  // Do not wipe runtimeTrace — it is the persistent per-session execution
+  // timeline; the new turn appends to it and is grouped by turnId.
+  setState((s) => ({ ...s, sendingMessage: true, streamingFinalText: "" }));
 
   try {
     const selection = state.selection;
@@ -85,8 +86,9 @@ export async function sendMessage(
       throw error;
     }
   } finally {
-    setState((s) => ({ ...s, sendingMessage: false, streamingFinalText: "",
-    runtimeTrace: [] }));
+    // Keep runtimeTrace — the completed turn's events stay in the timeline
+    // (grouped by turnId) instead of being cleared and re-reconstructed.
+    setState((s) => ({ ...s, sendingMessage: false, streamingFinalText: "" }));
     void refreshBilling();
   }
 }

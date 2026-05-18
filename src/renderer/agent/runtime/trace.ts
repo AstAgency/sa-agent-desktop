@@ -15,7 +15,11 @@ export function nextTraceEventId(prefix: string): string {
 }
 
 export function appendTraceEvent(rt: RuntimeInternals, event: RuntimeTraceEvent): void {
-  rt.state = { ...rt.state, trace: [...rt.state.trace, event] };
+  // Tag every event with the in-flight turn so the timeline can group a
+  // turn's events and keep them after the turn completes. The trace is
+  // cumulative per session (never wiped) — turnId is what scopes it.
+  const tagged = { ...event, turnId: event.turnId ?? rt.currentTurnId } as RuntimeTraceEvent;
+  rt.state = { ...rt.state, trace: [...rt.state.trace, tagged] };
 }
 
 export function updateTraceEvent(
@@ -59,7 +63,12 @@ export function applyToolCallPolicyWarnings(
   name: string,
   args: Record<string, unknown> | null | undefined,
 ) {
-  const warnings = getToolPolicyWarnings(rt.state.trace, { name, args }, traceEventId);
+  // The trace is cumulative across turns; the python-discovery policy is
+  // scoped to "this turn", so only consider the current turn's events.
+  const turnTrace = rt.state.trace.filter(
+    (event) => (event.turnId ?? rt.currentTurnId) === rt.currentTurnId,
+  );
+  const warnings = getToolPolicyWarnings(turnTrace, { name, args }, traceEventId);
   if (warnings.length === 0) return;
   updateTraceEvent(rt, traceEventId, { advisoryWarnings: warnings });
   rt.notify();
@@ -86,6 +95,33 @@ export function promoteToReasoning(rt: RuntimeInternals, round: ActiveRound): vo
   // streaming answer and once as a reasoning entry) — the duplicated/jumping
   // text users reported.
   rt.state = { ...rt.state, streamingFinalText: "" };
+}
+
+/**
+ * Keep whatever the model already streamed when a turn is aborted or errors
+ * mid-stream, marked as interrupted, instead of dropping it (§14). The trace
+ * is persistent, so this text stays visible in the timeline.
+ */
+export function markRoundInterrupted(rt: RuntimeInternals, round: ActiveRound): void {
+  if (round.reasoningEventId) {
+    updateTraceEvent(rt, round.reasoningEventId, { interrupted: true });
+    rt.state = { ...rt.state, streamingFinalText: "" };
+    rt.notify();
+    return;
+  }
+  if (round.textBuffer.length === 0) return;
+  const id = nextTraceEventId("reasoning");
+  round.reasoningEventId = id;
+  appendTraceEvent(rt, {
+    kind: "reasoning",
+    id,
+    round: round.index,
+    text: round.textBuffer,
+    interrupted: true,
+    at: Date.now(),
+  });
+  rt.state = { ...rt.state, streamingFinalText: "" };
+  rt.notify();
 }
 
 export function handleAgentEvent(

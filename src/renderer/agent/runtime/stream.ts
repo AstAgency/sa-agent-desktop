@@ -24,6 +24,7 @@ import { toolsToOpenAIDefinitions } from "./tools";
 import {
   applyToolCallPolicyWarnings,
   appendTraceEvent,
+  markRoundInterrupted,
   nextTraceEventId,
   promoteToReasoning,
   updateTraceEvent,
@@ -242,6 +243,9 @@ export async function runStream(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const aborted = abortController.signal.aborted;
+    // Don't discard text the user already saw — keep it in the persistent
+    // timeline marked interrupted (§14).
+    markRoundInterrupted(rt, round);
     stream.push({
       type: "error",
       reason: aborted ? "aborted" : "error",

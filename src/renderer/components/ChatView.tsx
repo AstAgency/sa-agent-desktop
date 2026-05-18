@@ -32,6 +32,7 @@ import {
   extractRenderedUserMessageParts,
   getInFlightTurn,
   getVisibleTurns,
+  selectTurnEvents,
   groupTurns,
   insertTextAtSelection,
   isAtBottom,
@@ -137,12 +138,21 @@ export function ChatView() {
           <>
             {isLoading ? <em>{translate(language, "chat.loadingHistory")}</em> : null}
             {visibleTurns.map((turn) => (
-              <TurnView key={turn.key} turn={turn} language={language} />
+              <TurnView
+                key={turn.key}
+                turn={turn}
+                events={runtimeTrace}
+                language={language}
+              />
             ))}
             {sending ? (
               <LiveTurn
                 userMessage={inFlightTurn?.userMessage ?? null}
-                trace={runtimeTrace}
+                trace={
+                  inFlightTurn
+                    ? selectTurnEvents(runtimeTrace, inFlightTurn)
+                    : EMPTY_TRACE
+                }
                 streamingFinalText={streamingFinalText}
                 language={language}
               />
@@ -263,8 +273,23 @@ function StreamErrorBubble({
   );
 }
 
-function TurnView({ turn, language }: { turn: ChatTurn; language: AppLanguage }) {
-  const trace = useMemo(() => buildHistoricalTrace(turn.traceMessages), [turn.traceMessages]);
+function TurnView({
+  turn,
+  events,
+  language,
+}: {
+  turn: ChatTurn;
+  events: RuntimeTraceEvent[];
+  language: AppLanguage;
+}) {
+  // Prefer the persistent structured events for this turn so the block shown
+  // live stays exactly the same after the turn completes (no swap/jump).
+  // Fall back to reconstruction for history loaded from the backend, where
+  // this app session has no structured events for the turn.
+  const trace = useMemo(() => {
+    const turnEvents = selectTurnEvents(events, turn);
+    return turnEvents.length > 0 ? turnEvents : buildHistoricalTrace(turn.traceMessages);
+  }, [events, turn]);
   return (
     <div className="chat-turn">
       {turn.userMessage ? <MessageView message={turn.userMessage} language={language} /> : null}

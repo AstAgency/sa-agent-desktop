@@ -36,13 +36,20 @@ export type RuntimeTraceEvent =
   | {
       kind: "reasoning";
       id: string;
+      // Id of the user message that started the turn these events belong to.
+      // Optional so reconstructed (history) events without it stay assignable.
+      turnId?: string;
       round: number;
       text: string;
+      // Set when the turn was aborted/errored mid-stream — the text is kept
+      // and the block is marked interrupted instead of being dropped (§14).
+      interrupted?: boolean;
       at: number;
     }
   | {
       kind: "tool_call";
       id: string;
+      turnId?: string;
       round: number;
       toolCallId: string;
       name: string;
@@ -91,6 +98,10 @@ export interface RuntimeInternals {
   model: string;
   inflightAbort: AbortController | null;
   currentTurnUserText: string;
+  // Id of the user message for the in-flight turn. Execution events are
+  // tagged with it so the UI can group a turn's events and keep them after
+  // the turn completes (persistent timeline).
+  currentTurnId: string;
   persistenceChain: Promise<unknown>;
   activeRound: ActiveRound | null;
   roundIndex: number;

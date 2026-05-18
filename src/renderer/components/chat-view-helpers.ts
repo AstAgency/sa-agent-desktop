@@ -130,6 +130,21 @@ export function groupTurns(messages: Message[]): ChatTurn[] {
   return turns;
 }
 
+/**
+ * The persistent execution events belonging to a turn. Events are tagged
+ * with the id of the user message that started the turn, so the same block
+ * renders live and after completion (no swap). Generic over the event shape
+ * to avoid coupling this module to the runtime types.
+ */
+export function selectTurnEvents<E extends { turnId?: string }>(
+  events: readonly E[],
+  turn: ChatTurn,
+): E[] {
+  const turnId = turn.userMessage?.id;
+  if (!turnId) return [];
+  return events.filter((event) => event.turnId === turnId);
+}
+
 export function buildHistoricalTrace(traceMessages: Message[]): ChatRuntimeTraceEvent[] {
   const events: ChatRuntimeTraceEvent[] = [];
   const resultsByCallId = new Map<string, { text: string; isError: boolean }>();
