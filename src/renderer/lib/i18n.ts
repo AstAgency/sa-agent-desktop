@@ -143,6 +143,8 @@ const dictionaries = {
     "chat.agent": "Agent",
     "chat.agent.default": "(default)",
     "chat.error.rateLimit": "Rate limit reached. Try again later.",
+    "chat.error.rateLimit.hourly":
+      "Hourly token limit exceeded. It will reset after {resetAt}.",
     "chat.error.timeout": "The model did not respond within the timeout. Try again or shorten the request.",
     "chat.error.generic": "Stream failed: {message}",
     "chat.error.dismiss": "Dismiss",
@@ -319,6 +321,8 @@ const dictionaries = {
     "chat.agent": "Агент",
     "chat.agent.default": "(по умолчанию)",
     "chat.error.rateLimit": "Достигнут лимит запросов. Попробуйте позже.",
+    "chat.error.rateLimit.hourly":
+      "Часовой лимит токенов исчерпан. Он сбросится после {resetAt}.",
     "chat.error.timeout": "Модель не ответила за отведённое время. Попробуйте ещё раз или сократите запрос.",
     "chat.error.generic": "Ошибка стрима: {message}",
     "chat.error.dismiss": "Скрыть",

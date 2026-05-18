@@ -1,6 +1,5 @@
-import { ChatCompletionError, createSession } from "../../lib/api";
+import { ChatCompletionError, createSession, getBilling } from "../../lib/api";
 import { getBridge } from "../../lib/bridge";
-import { translate } from "../../lib/i18n";
 import type { AgentRole, AgentSkill, Session, WorkspaceScope } from "../../lib/types";
 import { SessionRuntime } from "../../agent/runtime";
 import {
@@ -8,7 +7,7 @@ import {
   nextAvailableAttachmentPath,
   type ComposerAttachment,
 } from "../../components/chat-view-helpers";
-import { getState, setLastStreamError, setState, type ChatErrorKind } from "../store";
+import { getState, setBilling, setLastStreamError, setState } from "../store";
 import { refreshBilling } from "./bootstrap";
 import { saveGlobalMemory } from "./memory";
 import { saveProjectMemory } from "./projects";
@@ -20,6 +19,7 @@ import {
   runtimeUnsubscribes,
 } from "./registry";
 import { buildSessionScope, deriveDisplayName, findSession } from "./sessions";
+import { describeStreamError } from "./stream-error.js";
 
 export async function sendMessage(
   content: string,
@@ -82,7 +82,7 @@ export async function sendMessage(
     try {
       await runtime.sendUserMessage(messageContent);
     } catch (error) {
-      reportStreamError(error, session.id);
+      await reportStreamError(error, session.id);
       throw error;
     }
   } finally {
@@ -102,22 +102,26 @@ function deriveSessionNameSource(
   return attachments[0]?.name ?? "New chat";
 }
 
-function reportStreamError(error: unknown, sessionId: string) {
+async function reportStreamError(error: unknown, sessionId: string) {
   const state = getState();
   const language = state.language;
-  let kind: ChatErrorKind = "generic";
-  let message: string;
-  if (error instanceof ChatCompletionError) {
-    kind = error.kind;
+  let billing = state.billing;
+
+  if (
+    error instanceof ChatCompletionError &&
+    error.kind === "rate_limit" &&
+    error.code === "rate_limited" &&
+    /hourly token limit exceeded/i.test(error.message)
+  ) {
+    try {
+      billing = await getBilling();
+      setBilling(billing);
+    } catch {
+      billing = state.billing;
+    }
   }
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  if (kind === "rate_limit") {
-    message = translate(language, "chat.error.rateLimit");
-  } else if (kind === "timeout") {
-    message = translate(language, "chat.error.timeout");
-  } else {
-    message = translate(language, "chat.error.generic", { message: rawMessage });
-  }
+
+  const { kind, message } = describeStreamError(error, language, billing);
   setLastStreamError({ kind, message, sessionId });
 }
 

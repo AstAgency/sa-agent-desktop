@@ -17,6 +17,8 @@
     "src/renderer/lib/auth-api.ts",
     "src/renderer/lib/auth-fetch.ts",
     "src/renderer/lib/auth-fetch.test.ts",
+    "src/renderer/lib/api.ts",
+    "src/renderer/lib/api.test.ts",
     "src/renderer/lib/billing-vision.ts",
     "src/renderer/lib/billing-vision.test.ts",
     "src/renderer/lib/types.ts",
@@ -40,6 +42,8 @@
     "src/renderer/agent/prompts/build-tools-manifest.ts",
     "src/renderer/components/chat-view-helpers.ts",
     "src/renderer/components/chat-view-helpers.test.ts",
+    "src/renderer/state/controller/stream-error.ts",
+    "src/renderer/state/controller/stream-error.test.ts",
     "src/renderer/state/navigation-lock.ts",
     "src/renderer/state/navigation-lock.test.ts"
   ]

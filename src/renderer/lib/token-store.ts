@@ -10,7 +10,7 @@
  * encrypted store without touching call sites.
  */
 
-import type { AuthSession, AuthTokens, AuthUser } from "./auth-api";
+import type { AuthSession, AuthTokens, AuthUser } from "./auth-api.js";
 
 const STORAGE_KEY = "sa-agent.auth-session";
 

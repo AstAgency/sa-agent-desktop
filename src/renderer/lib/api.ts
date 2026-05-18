@@ -24,17 +24,17 @@ import type {
   ToolCallDelta,
   UpdateBillingLimitsInput,
   UpdateSummaryInput,
-} from "./types";
-import { refreshTokens } from "./auth-api";
+} from "./types.js";
+import { refreshTokens } from "./auth-api.js";
 import {
   clearAuthSession,
   getAccessToken,
   getAuthSession,
   getRefreshToken,
   setAuthSession,
-} from "./token-store";
-import { performAuthenticatedFetch } from "./auth-fetch";
-import { base64ToArrayBuffer, extractVisionDescription } from "./vision";
+} from "./token-store.js";
+import { performAuthenticatedFetch } from "./auth-fetch.js";
+import { base64ToArrayBuffer, extractVisionDescription } from "./vision.js";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3000";
 const BASE_URL_STORAGE_KEY = "sa-agent.backend-url";
@@ -77,7 +77,7 @@ async function fetchWithAuth(url: string, init: RequestInit): Promise<Response> 
     fetchImpl: fetch,
     getAccessToken,
     getRefreshToken,
-    refreshSession: async (_refreshToken) => attemptTokenRefresh(),
+    refreshSession: async (_refreshToken: string) => attemptTokenRefresh(),
     clearAuthSession,
     onSessionInvalidated,
   });
@@ -130,30 +130,49 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+type ApiErrorDetails = {
+  code: string | null;
+  message: string;
+};
+
+async function readErrorDetails(response: Response): Promise<ApiErrorDetails> {
   try {
     const payload = (await response.json()) as
-      | { error?: string | { message?: string } }
+      | { error?: string | { code?: string; message?: string } }
       | undefined;
-    if (!payload) return response.statusText;
-    if (typeof payload.error === "string") return payload.error;
-    if (payload.error && typeof payload.error === "object" && payload.error.message) {
-      return payload.error.message;
+    if (!payload) {
+      return { code: null, message: response.statusText };
     }
-    return JSON.stringify(payload);
+    if (typeof payload.error === "string") {
+      return { code: null, message: payload.error };
+    }
+    if (payload.error && typeof payload.error === "object") {
+      return {
+        code: typeof payload.error.code === "string" ? payload.error.code : null,
+        message: payload.error.message ?? response.statusText,
+      };
+    }
+    return { code: null, message: JSON.stringify(payload) };
   } catch {
-    return response.statusText;
+    return { code: null, message: response.statusText };
   }
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const details = await readErrorDetails(response);
+  return details.message;
 }
 
 export class ChatCompletionError extends Error {
   readonly status: number;
+  readonly code: string | null;
   readonly kind: "rate_limit" | "timeout" | "generic";
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.name = "ChatCompletionError";
     this.status = status;
+    this.code = code;
     if (status === 429) {
       this.kind = "rate_limit";
     } else if (status === 504 || status === 408) {
@@ -530,8 +549,8 @@ export async function streamChatCompletion(
   });
 
   if (!response.ok) {
-    const message = await readErrorMessage(response);
-    throw new ChatCompletionError(response.status, message);
+    const details = await readErrorDetails(response);
+    throw new ChatCompletionError(response.status, details.message, details.code);
   }
   if (!response.body) {
     throw new ChatCompletionError(0, "Streaming response has no body");

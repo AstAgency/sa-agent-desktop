@@ -1,0 +1,47 @@
+import { ChatCompletionError } from "../../lib/api.js";
+import { translate, type AppLanguage } from "../../lib/i18n.js";
+import type { Billing } from "../../lib/types.js";
+
+type StreamErrorKind = "rate_limit" | "timeout" | "generic";
+
+function isHourlyTokenLimitError(error: ChatCompletionError): boolean {
+  return (
+    error.code === "rate_limited" &&
+    /hourly token limit exceeded/i.test(error.message)
+  );
+}
+
+export function describeStreamError(
+  error: unknown,
+  language: AppLanguage,
+  billing: Billing | null,
+): { kind: StreamErrorKind; message: string } {
+  const kind: StreamErrorKind =
+    error instanceof ChatCompletionError ? error.kind : "generic";
+  const rawMessage = error instanceof Error ? error.message : String(error);
+
+  if (kind === "rate_limit") {
+    if (
+      error instanceof ChatCompletionError &&
+      isHourlyTokenLimitError(error) &&
+      billing?.hourly_reset_at
+    ) {
+      return {
+        kind,
+        message: translate(language, "chat.error.rateLimit.hourly", {
+          resetAt: billing.hourly_reset_at,
+        }),
+      };
+    }
+    return { kind, message: translate(language, "chat.error.rateLimit") };
+  }
+
+  if (kind === "timeout") {
+    return { kind, message: translate(language, "chat.error.timeout") };
+  }
+
+  return {
+    kind,
+    message: translate(language, "chat.error.generic", { message: rawMessage }),
+  };
+}
