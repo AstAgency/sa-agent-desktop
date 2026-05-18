@@ -17,7 +17,7 @@
  *   8. <global_memory>                  (per profile)
  *   9. <project_memory>                 (per project)
  *  10. <relevant_context>               (semantic memory)
- *  11. <available_tools>                (manifest for the LLM)
+ *  11. <available_tools>                (tools manifest / best practices)
  */
 export { EXECUTION_DISCIPLINE_PROMPT } from "./execution-discipline";
 export { CAPABILITIES_PROMPT } from "./capabilities";
@@ -25,3 +25,4 @@ export { COMPLETION_POLICY_PROMPT } from "./completion-policy";
 export { SKILLS_POLICY_PROMPT, buildSkillsBlock } from "./skills-policy";
 export { ROLES_POLICY_PROMPT, buildRolesBlock } from "./roles-policy";
 export { buildOrchestrationBlock } from "./orchestration";
+export { TOOLS_MANIFEST_PROMPT } from "./tools-manifest";

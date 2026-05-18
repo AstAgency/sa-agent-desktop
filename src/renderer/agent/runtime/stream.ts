@@ -12,6 +12,7 @@ import {
 import { streamChatCompletion } from "../../lib/api";
 import type { ChatMessage } from "../../lib/types";
 import { buildPrompt } from "../prompt-builder";
+import { TOOLS_MANIFEST_PROMPT } from "../prompts";
 import { getLiveMessages } from "../live-messages";
 import { retrieveRelevantSummaries } from "../search";
 import { transcriptToChatMessages } from "../transcript";
@@ -99,7 +100,7 @@ export async function runStream(
       project: rt.input.project,
       relevantSummaries,
       liveMessages: [],
-      toolsManifest: null,
+      toolsManifest: TOOLS_MANIFEST_PROMPT,
     }).concat(transcriptForLlm);
 
     const toolDefinitions = toolsToOpenAIDefinitions(rt.tools);
