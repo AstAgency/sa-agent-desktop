@@ -34,6 +34,8 @@
     "src/renderer/agent/runtime/types.ts",
     "src/renderer/agent/tool-result-summary.ts",
     "src/renderer/agent/tool-result-summary.test.ts",
+    "src/renderer/agent/summary-selection.ts",
+    "src/renderer/agent/summary-selection.test.ts",
     "src/renderer/agent/prompts/capability-registry.ts",
     "src/renderer/agent/prompts/capability-registry.test.ts",
     "src/renderer/agent/prompts/build-capabilities-prompt.ts",
