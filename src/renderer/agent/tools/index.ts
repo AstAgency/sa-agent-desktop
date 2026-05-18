@@ -10,7 +10,26 @@ import {
 type ToolDefinition = AgentTool;
 
 const DEFAULT_PYTHON_TIMEOUT_MS = 60_000;
+const LIST_PACKAGES_TIMEOUT_MS = 30_000;
 const MAX_LIST_ENTRIES = 200;
+const MAX_PACKAGE_ENTRIES = 500;
+
+const LIST_PACKAGES_SCRIPT = `import importlib.metadata as md
+seen = {}
+for dist in md.distributions():
+    try:
+        name = dist.metadata["Name"] or getattr(dist, "name", None)
+    except Exception:
+        name = getattr(dist, "name", None)
+    if not name:
+        continue
+    key = name.lower()
+    if key not in seen:
+        seen[key] = (name, dist.version or "?")
+for n, v in sorted(seen.values(), key=lambda x: x[0].lower()):
+    print(n + "==" + v)
+print("__COUNT__=" + str(len(seen)))
+`;
 
 export type WorkspaceToolActions = {
   updateGlobalMemory: (content: string) => Promise<void>;
@@ -164,6 +183,61 @@ export function buildWorkspaceTools(
         exit_code: result.exit_code,
         duration_ms: result.duration_ms,
         timed_out: result.timed_out,
+      });
+    },
+  };
+
+  const listPythonPackagesTool: ToolDefinition = {
+    name: "list_python_packages",
+    label: "List python packages",
+    description:
+      "List Python packages installed in the bundled interpreter (name==version). Call this before writing run_python code that imports third-party libraries, so you only rely on packages that are actually available. Optionally filter by a case-insensitive substring of the package name.",
+    parameters: Type.Object(
+      {
+        filter: Type.Optional(
+          Type.String({ description: "Case-insensitive substring to match package names" }),
+        ),
+      },
+      { additionalProperties: false },
+    ) as TSchema,
+    execute: async (_id, args) => {
+      const argRecord = (args ?? {}) as Record<string, unknown>;
+      const filter =
+        typeof argRecord.filter === "string" ? argRecord.filter.trim().toLowerCase() : "";
+      const result = await python.run(scope, LIST_PACKAGES_SCRIPT, {
+        timeoutMs: LIST_PACKAGES_TIMEOUT_MS,
+      });
+      if (result.exit_code !== 0) {
+        return textResult(
+          `Failed to list packages (exit_code=${result.exit_code})\n${result.stderr}`.trim(),
+          { exit_code: result.exit_code, timed_out: result.timed_out },
+        );
+      }
+      let total = 0;
+      const packages: string[] = [];
+      for (const rawLine of result.stdout.split("\n")) {
+        const line = rawLine.trim();
+        if (line.length === 0) continue;
+        if (line.startsWith("__COUNT__=")) {
+          total = Number.parseInt(line.slice("__COUNT__=".length), 10) || 0;
+          continue;
+        }
+        if (filter.length > 0 && !line.toLowerCase().includes(filter)) continue;
+        packages.push(line);
+      }
+      const matched = packages.length;
+      const shown = packages.slice(0, MAX_PACKAGE_ENTRIES);
+      const overflow =
+        matched > shown.length ? `\n…${matched - shown.length} more` : "";
+      const header =
+        filter.length > 0
+          ? `${matched} package(s) matching "${filter}" (of ${total} installed)`
+          : `${total} package(s) installed`;
+      const body = shown.length === 0 ? "(none)" : shown.join("\n");
+      return textResult(`${header}\n${body}${overflow}`, {
+        total,
+        matched,
+        filter: filter || null,
       });
     },
   };
@@ -341,6 +415,7 @@ export function buildWorkspaceTools(
     editFileTool,
     listFilesTool,
     runPythonTool,
+    listPythonPackagesTool,
     fetchUrlTool,
     webSearchTool,
     updateGlobalMemoryTool,
