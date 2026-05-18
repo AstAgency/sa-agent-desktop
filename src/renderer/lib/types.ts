@@ -79,6 +79,8 @@ export type Agent = {
   orchestration_protocol: string | null;
   version: string;
   active: boolean;
+  llm_model: string | undefined;
+  llm_provider: string | undefined;
   created_at: string;
   updated_at: string;
 };

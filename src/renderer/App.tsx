@@ -101,6 +101,5 @@ export function App() {
 
 async function initialize() {
   void startPythonRuntime();
-  const ok = await initializeAuth();
-  if (ok) await bootstrap();
+  await initializeAuth();
 }

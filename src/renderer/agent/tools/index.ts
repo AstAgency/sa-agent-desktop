@@ -15,7 +15,7 @@ const MAX_LIST_ENTRIES = 200;
 export type WorkspaceToolActions = {
   updateGlobalMemory: (content: string) => Promise<void>;
   updateProjectMemory: (projectId: string, content: string) => Promise<void>;
-  createProject: (input: { name: string; description?: string }) => Promise<Project>;
+  // createProject: (input: { name: string; description?: string }) => Promise<Project>;
 };
 
 export type AgentContentLookups = {
@@ -240,32 +240,32 @@ export function buildWorkspaceTools(
     },
   };
 
-  const createProjectTool: ToolDefinition = {
-    name: "create_project",
-    label: "Create project",
-    description:
-      "Create a new project belonging to the current profile. Returns the project id and key. Only available in global sessions — in a project session this tool is not registered.",
-    parameters: Type.Object(
-      {
-        name: Type.String({ description: "Human-readable project name" }),
-        description: Type.Optional(
-          Type.String({ description: "Optional short description" }),
-        ),
-      },
-      { additionalProperties: false },
-    ) as TSchema,
-    execute: async (_id, args) => {
-      const name = pickString(args, "name");
-      const argRecord = (args ?? {}) as Record<string, unknown>;
-      const description =
-        typeof argRecord.description === "string" ? argRecord.description : undefined;
-      const project = await actions.createProject({ name, description });
-      return textResult(
-        `Created project ${project.name} (id=${project.id})`,
-        { id: project.id, name: project.name },
-      );
-    },
-  };
+  // const createProjectTool: ToolDefinition = {
+  //   name: "create_project",
+  //   label: "Create project",
+  //   description:
+  //     "Create a new project belonging to the current profile. Returns the project id and key. Only available in global sessions — in a project session this tool is not registered.",
+  //   parameters: Type.Object(
+  //     {
+  //       name: Type.String({ description: "Human-readable project name" }),
+  //       description: Type.Optional(
+  //         Type.String({ description: "Optional short description" }),
+  //       ),
+  //     },
+  //     { additionalProperties: false },
+  //   ) as TSchema,
+  //   execute: async (_id, args) => {
+  //     const name = pickString(args, "name");
+  //     const argRecord = (args ?? {}) as Record<string, unknown>;
+  //     const description =
+  //       typeof argRecord.description === "string" ? argRecord.description : undefined;
+  //     const project = await actions.createProject({ name, description });
+  //     return textResult(
+  //       `Created project ${project.name} (id=${project.id})`,
+  //       { id: project.id, name: project.name },
+  //     );
+  //   },
+  // };
 
   const updateProjectMemoryTool: ToolDefinition = {
     name: "update_project_memory",
@@ -347,16 +347,16 @@ export function buildWorkspaceTools(
   ];
   if (agentContent.listSkillNames().length > 0) tools.push(getSkillTool);
   if (agentContent.listRoleNames().length > 0) tools.push(getRoleTool);
-  if (scope.kind === "global") tools.push(createProjectTool);
+  // if (scope.kind === "global") tools.push(createProjectTool);
   if (scope.kind === "project") tools.push(updateProjectMemoryTool);
   return tools;
 }
 
-export function describeToolsForPrompt(tools: ToolDefinition[]): string {
-  return tools
-    .map((tool) => `- ${tool.name}: ${tool.description ?? ""}`)
-    .join("\n");
-}
+// export function describeToolsForPrompt(tools: ToolDefinition[]): string {
+//   return tools
+//     .map((tool) => `- ${tool.name}: ${tool.description ?? ""}`)
+//     .join("\n");
+// }
 
 function pickString(args: unknown, key: string): string {
   if (args && typeof args === "object" && key in args) {

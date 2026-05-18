@@ -518,8 +518,9 @@ async function acquireRuntime(session: Session): Promise<SessionRuntime> {
     toolActions: {
       updateGlobalMemory: saveGlobalMemory,
       updateProjectMemory: saveProjectMemory,
-      createProject: createProjectViaTool,
+      // createProject: createProjectViaTool,
     },
+    model: agent.llm_model
   });
 
   const unsubscribe = runtime.subscribe((runtimeState) => {
