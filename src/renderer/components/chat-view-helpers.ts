@@ -152,7 +152,8 @@ export type ComposerAttachment = {
   size: number;
   mime: string;
   kind: "text" | "binary";
-  content: string;
+  content?: string;
+  workspacePath?: string;
 };
 
 export type PersistedAttachment = {
@@ -167,7 +168,7 @@ export const MAX_ATTACHMENT_SIZE_BYTES = 1 * 1024 * 1024;
 export const MAX_ATTACHMENTS_TOTAL_BYTES = 4 * 1024 * 1024;
 export const MAX_COMBINED_MESSAGE_BYTES = 256 * 1024;
 export const DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS =
-  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt";
+  ".txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.log,.ini,.conf,.toml,.pdf,.doc,.docx,.rtf,.odt,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.svg";
 
 export function parseAllowedAttachmentExtensions(raw: string | undefined | null): Set<string> {
   const source = raw && raw.trim().length > 0 ? raw : DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS;
@@ -221,8 +222,9 @@ export function buildComposerMessage(
 }
 
 export function validateAttachmentSizes(attachments: ComposerAttachment[]): string | null {
-  const total = attachments.reduce((sum, attachment) => sum + attachment.size, 0);
-  const oversized = attachments.find((attachment) => attachment.size > MAX_ATTACHMENT_SIZE_BYTES);
+  const transientAttachments = attachments.filter((attachment) => !attachment.workspacePath);
+  const total = transientAttachments.reduce((sum, attachment) => sum + attachment.size, 0);
+  const oversized = transientAttachments.find((attachment) => attachment.size > MAX_ATTACHMENT_SIZE_BYTES);
   if (oversized) {
     return `${oversized.name} exceeds ${MAX_ATTACHMENT_SIZE_BYTES} bytes`;
   }
@@ -308,4 +310,19 @@ export function validateAttachmentTypes(
     if (error) return error;
   }
   return null;
+}
+
+export function insertTextAtSelection(
+  value: string,
+  insertedText: string,
+  selectionStart: number,
+  selectionEnd: number,
+): { nextValue: string; nextCaret: number } {
+  const start = Math.max(0, Math.min(selectionStart, value.length));
+  const end = Math.max(start, Math.min(selectionEnd, value.length));
+  const nextValue = `${value.slice(0, start)}${insertedText}${value.slice(end)}`;
+  return {
+    nextValue,
+    nextCaret: start + insertedText.length,
+  };
 }

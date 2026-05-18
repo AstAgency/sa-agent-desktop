@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type RefObject,
+} from "react";
 import {
   abortActiveTurn,
   refreshBilling,
@@ -15,6 +23,7 @@ import {
 } from "../state/store";
 import { THINKING_WORDS, translate, type AppLanguage } from "../lib/i18n";
 import type { Billing, Message } from "../lib/types";
+import type { WorkspaceScope } from "../lib/types";
 import type { RuntimeTraceEvent } from "../agent/runtime";
 import { Markdown } from "./Markdown";
 import {
@@ -23,8 +32,10 @@ import {
   extractRenderedUserMessageParts,
   getVisibleTurns,
   groupTurns,
+  insertTextAtSelection,
   isAtBottom,
   MAX_COMBINED_MESSAGE_BYTES,
+  nextAvailableAttachmentPath,
   parseAllowedAttachmentExtensions,
   type ComposerAttachment,
   validateAttachmentSizes,
@@ -85,6 +96,20 @@ export function ChatView() {
 
   const showError =
     lastStreamError && selection.kind === "session" && lastStreamError.sessionId === selection.sessionId;
+  const composerAttachmentScope =
+    selection.kind === "session" && session
+      ? session.project_id && project
+        ? {
+            kind: "project" as const,
+            projectId: project.id,
+            displayName: project.name,
+          }
+        : {
+            kind: "global" as const,
+            sessionId: session.id,
+            displayName: session.display_name,
+          }
+      : null;
 
   return (
     <main className="workspace chat-view">
@@ -158,6 +183,7 @@ export function ChatView() {
           selectedAgentKey={selectedAgentKey}
           onSelectAgent={setSelectedAgent}
           language={language}
+          attachmentScope={composerAttachmentScope}
           hideStop={showLanding}
           onSubmitMessage={
             showLanding
@@ -404,7 +430,7 @@ function useThinkingWord(language: AppLanguage): string {
   useEffect(() => {
     const id = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % list.length);
-    }, 5000);
+    }, 15000);
     return () => window.clearInterval(id);
   }, [list.length]);
   return list[index] ?? list[0] ?? "";
@@ -512,6 +538,7 @@ function Composer(props: {
   selectedAgentKey: string | null;
   onSelectAgent: (agentKey: string | null) => void;
   language: AppLanguage;
+  attachmentScope: WorkspaceScope | null;
   hideStop?: boolean;
   onSubmitMessage?: (text: string, attachments: ComposerAttachment[]) => Promise<void>;
 }) {
@@ -529,6 +556,7 @@ function Composer(props: {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   async function submit() {
     setError(null);
@@ -601,10 +629,47 @@ function Composer(props: {
       (file) => !(file.size === 0 && file.type === ""),
     );
     try {
-      await appendAttachments(await Promise.all(files.map(readDroppedFile)));
+      await appendAttachments(await readBrowserFilesAsAttachments(files, props.attachmentScope));
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const clipboard = event.clipboardData;
+    const itemFiles = Array.from(clipboard?.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const files = itemFiles.length > 0 ? itemFiles : Array.from(clipboard?.files ?? []);
+    if (files.length === 0) return;
+
+    event.preventDefault();
+
+    const pastedText = clipboard?.getData("text/plain") ?? "";
+    if (pastedText.length > 0) {
+      const target = event.currentTarget;
+      const selectionStart = target.selectionStart ?? value.length;
+      const selectionEnd = target.selectionEnd ?? value.length;
+      const { nextValue, nextCaret } = insertTextAtSelection(
+        value,
+        pastedText,
+        selectionStart,
+        selectionEnd,
+      );
+      setValue(nextValue);
+      requestAnimationFrame(() => {
+        textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
+    }
+
+    void (async () => {
+      try {
+        await appendAttachments(await readBrowserFilesAsAttachments(files, props.attachmentScope));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
+      }
+    })();
   }
 
   return (
@@ -616,9 +681,11 @@ function Composer(props: {
       }}
     >
       <textarea
+        ref={textareaRef}
         value={value}
         placeholder={translate(props.language, "chat.placeholder")}
         onChange={(event) => setValue(event.target.value)}
+        onPaste={handlePaste}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
@@ -724,6 +791,42 @@ async function readDroppedFile(file: File): Promise<ComposerAttachment> {
         ? await file.text()
         : toBase64(await file.arrayBuffer()),
   };
+}
+
+async function readBrowserFilesAsAttachments(
+  files: File[],
+  scope: WorkspaceScope | null,
+): Promise<ComposerAttachment[]> {
+  if (files.length === 0) return [];
+  if (!scope) {
+    return Promise.all(files.map(readDroppedFile));
+  }
+  const fs = getBridge().fs;
+  const rootEntries = await fs.list(scope, ".");
+  const usedPaths = new Set(
+    rootEntries.filter((entry) => entry.type === "file").map((entry) => entry.name),
+  );
+  const attachments: ComposerAttachment[] = [];
+  for (const file of files) {
+    const kind = await classifyDroppedFile(file);
+    const workspacePath = nextAvailableAttachmentPath(file.name, usedPaths);
+    usedPaths.add(workspacePath);
+    if (kind === "text") {
+      const content = await file.text();
+      await fs.write(scope, workspacePath, content);
+    } else {
+      const base64 = toBase64(await file.arrayBuffer());
+      await fs.writeBinary(scope, workspacePath, base64);
+    }
+    attachments.push({
+      name: file.name,
+      size: file.size,
+      mime: file.type || (kind === "text" ? "text/plain" : "application/octet-stream"),
+      kind,
+      workspacePath,
+    });
+  }
+  return attachments;
 }
 
 async function classifyDroppedFile(file: File): Promise<"text" | "binary"> {

@@ -54,6 +54,13 @@ test("parseAllowedAttachmentExtensions normalizes env values and builds dialog f
   ]);
 });
 
+test("default dialog attachment allowlist includes common image formats", () => {
+  const allowed = parseAllowedAttachmentExtensions(undefined);
+  assert.equal(allowed.has(".png"), true);
+  assert.equal(allowed.has(".jpg"), true);
+  assert.equal(allowed.has(".webp"), true);
+});
+
 test("validateAllowedAttachmentExtension rejects files outside env allowlist", () => {
   const allowed = parseAllowedAttachmentExtensions(".pdf,.docx,.txt");
   assert.equal(validateAllowedAttachmentExtension("brief.pdf", allowed), null);

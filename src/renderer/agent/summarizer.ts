@@ -2,8 +2,8 @@ import { chatCompletion, createSummary } from "../lib/api";
 import { getBridge } from "../lib/bridge";
 import type { Message, Summary } from "../lib/types";
 
-export const SUMMARIZE_THRESHOLD = 20;
-export const SUMMARIZE_BUFFER = 4;
+export const SUMMARIZE_THRESHOLD = 30;
+export const SUMMARIZE_BUFFER = 10;
 export const SUMMARY_MODEL = "deepseek-chat";
 
 export type SummarizeContext = {

@@ -189,11 +189,25 @@ async function saveAttachmentsToWorkspace(
     workspacePath: string;
   }> = [];
   for (const attachment of attachments) {
+    if (attachment.workspacePath) {
+      persisted.push({
+        name: attachment.name,
+        size: attachment.size,
+        mime: attachment.mime,
+        kind: attachment.kind,
+        workspacePath: attachment.workspacePath,
+      });
+      usedPaths.add(attachment.workspacePath);
+      continue;
+    }
     const workspacePath = nextAvailableAttachmentPath(attachment.name, usedPaths);
     usedPaths.add(workspacePath);
     if (attachment.kind === "text") {
-      await fs.write(scope, workspacePath, attachment.content);
+      await fs.write(scope, workspacePath, attachment.content ?? "");
     } else {
+      if (!attachment.content) {
+        throw new Error(`Missing binary content for attachment ${attachment.name}`);
+      }
       await fs.writeBinary(scope, workspacePath, attachment.content);
     }
     persisted.push({
