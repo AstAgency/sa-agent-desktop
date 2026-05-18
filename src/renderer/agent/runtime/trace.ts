@@ -81,6 +81,11 @@ export function promoteToReasoning(rt: RuntimeInternals, round: ActiveRound): vo
     text: round.textBuffer,
     at: Date.now(),
   });
+  // This round used a tool, so its text was never the final answer. Clear the
+  // optimistic live bubble so the same text is not shown twice (once as a
+  // streaming answer and once as a reasoning entry) — the duplicated/jumping
+  // text users reported.
+  rt.state = { ...rt.state, streamingFinalText: "" };
 }
 
 export function handleAgentEvent(

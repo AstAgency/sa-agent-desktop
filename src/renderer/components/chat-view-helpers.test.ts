@@ -49,6 +49,74 @@ test("groupTurns keeps assistant reasoning in the main flow when tool calls exis
   assert.equal(turns[0]?.reasoningMessages[0]?.tool_calls, undefined);
 });
 
+test("groupTurns surfaces the last agent text when a turn ends on a tool call", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "do it" }),
+    message({
+      id: "a1",
+      role: "assistant",
+      content: "I will read the file now.",
+      tool_calls: [
+        {
+          id: "call-1",
+          type: "function",
+          function: { name: "read_file", arguments: "{\"path\":\"x\"}" },
+        },
+      ],
+    }),
+    message({ id: "t1", role: "tool", content: "contents", tool_call_id: "call-1" }),
+  ]);
+
+  assert.equal(turns.length, 1);
+  // No plain closing message, but the agent's words are still shown as the
+  // answer instead of an empty dialog.
+  assert.equal(turns[0]?.finalAssistant?.content, "I will read the file now.");
+  assert.equal(turns[0]?.finalAssistant?.tool_calls, undefined);
+  // Not duplicated as a reasoning bubble.
+  assert.equal(turns[0]?.reasoningMessages.length, 0);
+  // The tool call is still in the trace.
+  assert.equal(turns[0]?.traceMessages.length, 2);
+});
+
+test("groupTurns keeps an earlier plain answer visible when another follows", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "q" }),
+    message({ id: "a1", role: "assistant", content: "First part." }),
+    message({ id: "a2", role: "assistant", content: "Second part." }),
+  ]);
+
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0]?.finalAssistant?.content, "Second part.");
+  // The earlier answer stays in the main flow rather than being buried.
+  assert.equal(turns[0]?.reasoningMessages.length, 1);
+  assert.equal(turns[0]?.reasoningMessages[0]?.content, "First part.");
+  assert.equal(turns[0]?.traceMessages.length, 0);
+});
+
+test("groupTurns leaves a silent tool-only turn without a fabricated answer", () => {
+  const turns = groupTurns([
+    message({ id: "u1", role: "user", content: "go" }),
+    message({
+      id: "a1",
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call-1",
+          type: "function",
+          function: { name: "list_files", arguments: "{}" },
+        },
+      ],
+    }),
+    message({ id: "t1", role: "tool", content: "a\nb", tool_call_id: "call-1" }),
+  ]);
+
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0]?.finalAssistant, null);
+  assert.equal(turns[0]?.reasoningMessages.length, 0);
+  assert.equal(turns[0]?.traceMessages.length, 2);
+});
+
 test("isAtBottom respects threshold and treats short content as pinned", () => {
   assert.equal(isAtBottom(0, 400, 400), true);
   assert.equal(isAtBottom(537, 400, 1000), true);

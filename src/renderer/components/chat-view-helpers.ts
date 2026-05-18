@@ -45,7 +45,24 @@ export function groupTurns(messages: Message[]): ChatTurn[] {
   const turns: ChatTurn[] = [];
   let current: ChatTurn | null = null;
   const flush = () => {
-    if (current) turns.push(current);
+    if (current) {
+      if (current.finalAssistant === null) {
+        // The turn ended without a plain closing answer — the agent stopped
+        // right after a tool-call round, or only produced tool-call
+        // narration. Surface its last words as the final answer so the
+        // dialog is never silently empty ("pipeline завершается, диалог
+        // пустой").
+        for (let i = current.reasoningMessages.length - 1; i >= 0; i -= 1) {
+          const candidate = current.reasoningMessages[i]!;
+          if (candidate.content.trim().length > 0) {
+            current.finalAssistant = candidate;
+            current.reasoningMessages.splice(i, 1);
+            break;
+          }
+        }
+      }
+      turns.push(current);
+    }
     current = null;
   };
   for (const message of messages) {
@@ -83,7 +100,11 @@ export function groupTurns(messages: Message[]): ChatTurn[] {
         current.traceMessages.push(message);
       } else {
         if (current.finalAssistant !== null) {
-          current.traceMessages.push(current.finalAssistant);
+          // A later plain assistant message supersedes this one as the
+          // answer, but its text must stay visible — keep it in the main
+          // flow as reasoning instead of burying it in the trace (where
+          // assistant text is never rendered).
+          current.reasoningMessages.push(current.finalAssistant);
         }
         current.finalAssistant = message;
       }
