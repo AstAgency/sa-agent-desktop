@@ -1,5 +1,5 @@
 import type { Agent, AgentTool } from "@earendil-works/pi-agent-core";
-import type { EphemeralToolResult } from "../transcript";
+import type { EphemeralToolResult } from "../transcript.js";
 import type {
   Agent as AgentRecord,
   AgentRole,
@@ -9,8 +9,12 @@ import type {
   Project,
   Summary,
   WorkspaceScope,
-} from "../../lib/types";
-import type { WorkspaceToolActions } from "../tools";
+} from "../../lib/types.js";
+
+export type WorkspaceToolActions = {
+  updateGlobalMemory: (content: string) => Promise<void>;
+  updateProjectMemory: (projectId: string, content: string) => Promise<void>;
+};
 
 export type SessionRuntimeInput = {
   sessionId: string;
@@ -44,6 +48,7 @@ export type RuntimeTraceEvent =
       name: string;
       argsJson: string;
       status: ToolCallStatus;
+      advisoryWarnings?: string[];
       result?: string;
       error?: string;
       at: number;

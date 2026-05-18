@@ -3,6 +3,7 @@ import {
   extractToolResultText,
   summarizeToolResultForHistory,
 } from "../tool-result-summary";
+import { getToolPolicyWarnings } from "./tool-policy";
 import { enqueuePersistence, persistAgentMessage } from "./persistence";
 import type { ActiveRound, RuntimeInternals, RuntimeTraceEvent, ToolCallStatus } from "./types";
 
@@ -49,6 +50,18 @@ export function updateToolCallStatus(
   });
   if (!mutated) return;
   rt.state = { ...rt.state, trace };
+  rt.notify();
+}
+
+export function applyToolCallPolicyWarnings(
+  rt: RuntimeInternals,
+  traceEventId: string,
+  name: string,
+  args: Record<string, unknown> | null | undefined,
+) {
+  const warnings = getToolPolicyWarnings(rt.state.trace, { name, args }, traceEventId);
+  if (warnings.length === 0) return;
+  updateTraceEvent(rt, traceEventId, { advisoryWarnings: warnings });
   rt.notify();
 }
 

@@ -20,8 +20,17 @@
     "src/renderer/lib/types.ts",
     "src/renderer/agent/transcript.ts",
     "src/renderer/agent/transcript.test.ts",
+    "src/renderer/agent/prompt-builder.ts",
+    "src/renderer/agent/prompt-builder.test.ts",
+    "src/renderer/agent/runtime/tool-policy.ts",
+    "src/renderer/agent/runtime/tool-policy.test.ts",
+    "src/renderer/agent/runtime/types.ts",
     "src/renderer/agent/tool-result-summary.ts",
     "src/renderer/agent/tool-result-summary.test.ts",
+    "src/renderer/agent/prompts/capability-registry.ts",
+    "src/renderer/agent/prompts/capability-registry.test.ts",
+    "src/renderer/agent/prompts/build-capabilities-prompt.ts",
+    "src/renderer/agent/prompts/build-tools-manifest.ts",
     "src/renderer/components/chat-view-helpers.ts",
     "src/renderer/components/chat-view-helpers.test.ts"
   ]

@@ -19,10 +19,17 @@
  *  10. <relevant_context>               (semantic memory)
  *  11. <available_tools>                (tools manifest / best practices)
  */
-export { EXECUTION_DISCIPLINE_PROMPT } from "./execution-discipline";
-export { CAPABILITIES_PROMPT } from "./capabilities";
-export { COMPLETION_POLICY_PROMPT } from "./completion-policy";
-export { SKILLS_POLICY_PROMPT, buildSkillsBlock } from "./skills-policy";
-export { ROLES_POLICY_PROMPT, buildRolesBlock } from "./roles-policy";
-export { buildOrchestrationBlock } from "./orchestration";
-export { TOOLS_MANIFEST_PROMPT } from "./tools-manifest";
+export { EXECUTION_DISCIPLINE_PROMPT } from "./execution-discipline.js";
+export { CAPABILITIES_PROMPT } from "./capabilities.js";
+export { buildCapabilitiesPrompt } from "./build-capabilities-prompt.js";
+export { buildToolsManifest } from "./build-tools-manifest.js";
+export {
+  CAPABILITY_REGISTRY,
+  listAvailableCapabilityNames,
+  resolveAvailableCapabilities,
+} from "./capability-registry.js";
+export { COMPLETION_POLICY_PROMPT } from "./completion-policy.js";
+export { SKILLS_POLICY_PROMPT, buildSkillsBlock } from "./skills-policy.js";
+export { ROLES_POLICY_PROMPT, buildRolesBlock } from "./roles-policy.js";
+export { buildOrchestrationBlock } from "./orchestration.js";
+export { TOOLS_MANIFEST_PROMPT } from "./tools-manifest.js";

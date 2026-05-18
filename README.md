@@ -13,7 +13,7 @@ Desktop client for SA-Agent. Implements the contract from
   save assistant message → maybe summarize.
 - Agent loop and tool execution go through `@earendil-works/pi-agent-core`.
   Built-in tools: `read_file`, `write_file`, `edit_file`, `list_files`,
-  `run_python` (executes via the bundled venv inside a per-scope `.tmp` dir).
+  `run_python` (executes via the bundled standalone interpreter inside a per-scope `.tmp` dir).
 
 ## Requirements
 
@@ -29,7 +29,7 @@ electron/                main process (window, IPC, python runtime, FS sandbox)
 python-sidecar/          long-running python process (embeddings + run_python)
 resources/python-runtime/<platform>/
   python/                bundled python-build-standalone interpreter
-  venv/                  pre-built venv with sentence-transformers + torch (cpu)
+  packages/              bundled Python packages and model dependencies
   hf-cache/              pre-downloaded model weights for offline use
 scripts/build-python-runtime.mjs   builds the runtime above for current platform
 src/renderer/            React/Vite renderer (state, API client, agent runtime, UI)
@@ -43,13 +43,13 @@ Workspace files are kept in the OS userData directory:
 - `<userData>/global/<sessionId>/` — files for a global (project-less) session.
 
 Each scope has a `.tmp/` subdirectory where the `run_python` tool writes
-generated scripts before executing them through the bundled venv. The agent's
+generated scripts before executing them through the bundled standalone interpreter. The agent's
 FS tools cannot escape the chosen scope.
 
 ## Scripts
 
 - `npm run python:build` — download `python-build-standalone` for the current
-  platform, create a venv, install Python dependencies, and pre-download the
+  platform, stage the bundled interpreter and Python dependencies, and pre-download the
   embedding model weights into `resources/python-runtime/<platform>/`.
 - `npm run python:rebuild` — same, but forces a clean rebuild.
 - `npm run dev` — start Vite + tsc in watch + Electron pointing at the dev URL.

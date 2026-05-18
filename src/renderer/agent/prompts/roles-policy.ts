@@ -1,4 +1,4 @@
-import type { AgentRole } from "../../lib/types";
+import type { AgentRole } from "../../lib/types.js";
 
 export const ROLES_POLICY_PROMPT = [
   "Role protocol:",

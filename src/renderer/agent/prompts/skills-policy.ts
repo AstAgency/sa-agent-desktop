@@ -1,5 +1,5 @@
-import { parseSkillFrontmatter } from "../skills/parse-skill-frontmatter";
-import type { AgentSkill } from "../../lib/types";
+import { parseSkillFrontmatter } from "../skills/parse-skill-frontmatter.js";
+import type { AgentSkill } from "../../lib/types.js";
 
 export const SKILLS_POLICY_PROMPT = [
   "Skill protocol:",

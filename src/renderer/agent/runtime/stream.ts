@@ -12,7 +12,6 @@ import {
 import { streamChatCompletion } from "../../lib/api";
 import type { ChatMessage } from "../../lib/types";
 import { buildPrompt } from "../prompt-builder";
-import { TOOLS_MANIFEST_PROMPT } from "../prompts";
 import { getLiveMessages } from "../live-messages";
 import { retrieveRelevantSummaries } from "../search";
 import { transcriptToChatMessages } from "../transcript";
@@ -23,6 +22,7 @@ import {
 } from "./converters";
 import { toolsToOpenAIDefinitions } from "./tools";
 import {
+  applyToolCallPolicyWarnings,
   appendTraceEvent,
   nextTraceEventId,
   promoteToReasoning,
@@ -100,7 +100,7 @@ export async function runStream(
       project: rt.input.project,
       relevantSummaries,
       liveMessages: [],
-      toolsManifest: TOOLS_MANIFEST_PROMPT,
+      availableToolNames: rt.tools.map((tool) => tool.name),
     }).concat(transcriptForLlm);
 
     const toolDefinitions = toolsToOpenAIDefinitions(rt.tools);
@@ -215,6 +215,7 @@ export async function runStream(
         partial.content[contentIndex] = finalized;
         const traceEventId = round.toolCallEventIds.get(toolCall.id);
         if (traceEventId) {
+          applyToolCallPolicyWarnings(rt, traceEventId, finalized.name, parsedArgs ?? null);
           updateTraceEvent(rt, traceEventId, {
             argsJson: JSON.stringify(parsedArgs ?? {}, null, 2),
           });
