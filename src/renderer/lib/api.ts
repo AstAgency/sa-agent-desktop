@@ -17,6 +17,7 @@ import type {
   OpenAIToolCallRecord,
   Profile,
   Project,
+  SessionsPage,
   SearchSummariesRequest,
   SearchSummaryResult,
   Session,
@@ -248,27 +249,20 @@ export function deleteProject(projectId: string, options?: RequestOptions): Prom
 // Sessions
 // ============================================================================
 
-export async function getGlobalSessions(options?: RequestOptions): Promise<Session[]> {
-  const payload = await request<Session[] | { sessions: Session[] }>(
-    "GET",
-    "/v1/sessions?global=true",
-    undefined,
-    options,
-  );
-  return Array.isArray(payload) ? payload : payload.sessions;
-}
-
-export async function getProjectSessions(
-  projectId: string,
+export function getSessionsPage(
+  input?: {
+    page?: number;
+    projectId?: string;
+    global?: boolean;
+  },
   options?: RequestOptions,
-): Promise<Session[]> {
-  const payload = await request<Session[] | { sessions: Session[] }>(
-    "GET",
-    `/v1/sessions?project_id=${encodeURIComponent(projectId)}`,
-    undefined,
-    options,
-  );
-  return Array.isArray(payload) ? payload : payload.sessions;
+): Promise<SessionsPage> {
+  const params = new URLSearchParams();
+  if (input?.page && input.page > 1) params.set("page", String(input.page));
+  if (input?.projectId) params.set("project_id", input.projectId);
+  if (input?.global) params.set("global", "true");
+  const query = params.toString();
+  return request("GET", `/v1/sessions${query ? `?${query}` : ""}`, undefined, options);
 }
 
 export function createSession(
@@ -519,6 +513,7 @@ export type ToolCallAccumulator = {
 };
 
 export type StreamChatHandlers = {
+  onAccepted?: () => void | Promise<void>;
   onDelta?: (delta: string) => void;
   onChunk?: (chunk: ChatCompletionChunk) => void;
   onUsage?: (usage: { total_tokens: number }) => void;
@@ -552,6 +547,7 @@ export async function streamChatCompletion(
     const details = await readErrorDetails(response);
     throw new ChatCompletionError(response.status, details.message, details.code);
   }
+  await handlers.onAccepted?.();
   if (!response.body) {
     throw new ChatCompletionError(0, "Streaming response has no body");
   }

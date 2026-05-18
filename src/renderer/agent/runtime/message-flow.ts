@@ -1,5 +1,4 @@
 import type { UserMessage } from "@earendil-works/pi-ai";
-import { appendMessage } from "../../lib/api.js";
 import { getLiveMessages } from "../live-messages.js";
 import { maybeSummarize } from "../summarizer.js";
 import type { RuntimeInternals } from "./types.js";
@@ -8,9 +7,15 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
   const trimmed = content.trim();
   if (trimmed.length === 0) throw new Error("Empty message");
   rt.lastRunError = null;
-
-  const userMessage = await appendMessage(rt.input.sessionId, "user", content);
-  rt.persistedMessageIds.add(userMessage.id);
+  const localTimestamp = Date.now();
+  const localUserMessageId = `local-user-${localTimestamp.toString(36)}`;
+  const userMessage = {
+    id: localUserMessageId,
+    session_id: rt.input.sessionId,
+    role: "user" as const,
+    content,
+    created_at: new Date(localTimestamp).toISOString(),
+  };
   rt.roundIndex = 0;
   rt.activeRound = null;
   rt.currentTurnToolResults = [];
@@ -18,6 +23,8 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
   // is NOT reset — it is cumulative per session so the timeline persists
   // across turns; events are grouped/scoped by turnId.
   rt.currentTurnId = userMessage.id;
+  rt.currentTurnLocalUserMessageId = userMessage.id;
+  rt.currentTurnUserTimestamp = localTimestamp;
   rt.state = {
     ...rt.state,
     messages: [...rt.state.messages, userMessage],
@@ -30,7 +37,7 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
   const piUserMessage: UserMessage = {
     role: "user",
     content,
-    timestamp: Date.now(),
+    timestamp: localTimestamp,
   };
   rt.agent.state.messages = [...rt.agent.state.messages, piUserMessage];
 
@@ -49,10 +56,33 @@ export async function sendUserMessage(rt: RuntimeInternals, content: string): Pr
   if (rt.lastRunError) {
     const error = rt.lastRunError;
     rt.lastRunError = null;
+    if (rt.currentTurnLocalUserMessageId) {
+      discardOptimisticUserMessage(rt);
+    }
     throw error;
   }
 
   await maybeRunSummarization(rt);
+}
+
+function discardOptimisticUserMessage(rt: RuntimeInternals) {
+  const localMessageId = rt.currentTurnLocalUserMessageId;
+  if (!localMessageId) return;
+
+  rt.state = {
+    ...rt.state,
+    messages: rt.state.messages.filter((message) => message.id !== localMessageId),
+  };
+  rt.agent.state.messages = rt.agent.state.messages.filter(
+    (message) =>
+      !(
+        message.role === "user" &&
+        message.timestamp === rt.currentTurnUserTimestamp &&
+        message.content === rt.currentTurnUserText
+      ),
+  );
+  rt.currentTurnLocalUserMessageId = null;
+  rt.notify();
 }
 
 async function maybeRunSummarization(rt: RuntimeInternals) {

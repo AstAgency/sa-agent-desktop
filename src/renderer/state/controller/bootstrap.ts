@@ -2,13 +2,14 @@ import {
   getAgents,
   getBilling,
   getEmbeddingModelInfo,
-  getGlobalSessions,
+  getSessionsPage,
   getProfile,
   getProjects,
 } from "../../lib/api";
 import { getBridge } from "../../lib/bridge";
 import { setBilling, setState } from "../store";
-import { loadProjectSessions } from "./projects";
+
+let inflightBootstrap: Promise<void> | null = null;
 
 export async function startPythonRuntime() {
   setState((state) => ({
@@ -38,41 +39,55 @@ export async function startPythonRuntime() {
 }
 
 export async function bootstrap() {
-  setState((state) => ({
-    ...state,
-    bootstrap: { ...state.bootstrap, status: "loading", error: null },
-  }));
-  try {
-    const [profile, projects, globalSessions, embeddingModel, agents] = await Promise.all([
-      getProfile(),
-      getProjects(),
-      getGlobalSessions(),
-      getEmbeddingModelInfo(),
-      getAgents(),
-    ]);
+  if (inflightBootstrap) return inflightBootstrap;
+
+  inflightBootstrap = (async () => {
     setState((state) => ({
       ...state,
-      profile,
-      projects,
-      globalSessions,
-      embeddingModel,
-      agents,
-      selectedAgentKey: state.selectedAgentKey ?? agents[0]?.agent_key ?? null,
-      selection: state.selection.kind === "none" ? { kind: "new-global" } : state.selection,
-      bootstrap: { ...state.bootstrap, status: "ready", error: null },
+      bootstrap: { ...state.bootstrap, status: "loading", error: null },
     }));
-    await Promise.all(projects.map((project) => loadProjectSessions(project.id)));
-    void refreshBilling();
-  } catch (error) {
-    setState((state) => ({
-      ...state,
-      bootstrap: {
-        ...state.bootstrap,
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-      },
-    }));
-  }
+    try {
+      const [profile, projects, globalSessionsPage, embeddingModel, agents] = await Promise.all([
+        getProfile(),
+        getProjects(),
+        getSessionsPage({ global: true, page: 1 }),
+        getEmbeddingModelInfo(),
+        getAgents(),
+      ]);
+      setState((state) => ({
+        ...state,
+        profile,
+        projects,
+        globalSessions: globalSessionsPage.sessions,
+        globalSessionsPage: {
+          page: globalSessionsPage.page,
+          total: globalSessionsPage.total,
+          hasMore: globalSessionsPage.has_more,
+          loading: false,
+          loaded: true,
+        },
+        embeddingModel,
+        agents,
+        selectedAgentKey: state.selectedAgentKey ?? agents[0]?.agent_key ?? null,
+        selection: state.selection.kind === "none" ? { kind: "new-global" } : state.selection,
+        bootstrap: { ...state.bootstrap, status: "ready", error: null },
+      }));
+      void refreshBilling();
+    } catch (error) {
+      setState((state) => ({
+        ...state,
+        bootstrap: {
+          ...state.bootstrap,
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }));
+    } finally {
+      inflightBootstrap = null;
+    }
+  })();
+
+  return inflightBootstrap;
 }
 
 export async function refreshBilling(): Promise<void> {

@@ -1,6 +1,7 @@
 import {
   deleteSession as deleteSessionRequest,
   getAllSessionMessages,
+  getSessionsPage,
   getSessionSummaries,
   updateSession as updateSessionRequest,
 } from "../../lib/api";
@@ -38,10 +39,19 @@ export async function removeSession(sessionId: string) {
   if (isNavigationLocked(getState())) return;
   await deleteSessionRequest(sessionId);
   setState((state) => {
+    const inGlobals = state.globalSessions.some((existing) => existing.id === sessionId);
     const nextGlobalSessions = state.globalSessions.filter((existing) => existing.id !== sessionId);
     const nextProjectSessions: Record<string, typeof state.globalSessions> = {};
+    const nextProjectSessionsPage = { ...state.projectSessionsPage };
     for (const [projectId, sessions] of Object.entries(state.projectSessions)) {
+      const hadSession = sessions.some((existing) => existing.id === sessionId);
       nextProjectSessions[projectId] = sessions.filter((existing) => existing.id !== sessionId);
+      if (hadSession && nextProjectSessionsPage[projectId]) {
+        nextProjectSessionsPage[projectId] = {
+          ...nextProjectSessionsPage[projectId],
+          total: Math.max(0, nextProjectSessionsPage[projectId].total - 1),
+        };
+      }
     }
     const isSelected = state.selection.kind === "session" && state.selection.sessionId === sessionId;
     const { [sessionId]: _droppedMessages, ...messagesBySession } = state.messagesBySession;
@@ -49,7 +59,14 @@ export async function removeSession(sessionId: string) {
     return {
       ...state,
       globalSessions: nextGlobalSessions,
+      globalSessionsPage: inGlobals
+        ? {
+            ...state.globalSessionsPage,
+            total: Math.max(0, state.globalSessionsPage.total - 1),
+          }
+        : state.globalSessionsPage,
       projectSessions: nextProjectSessions,
+      projectSessionsPage: nextProjectSessionsPage,
       messagesBySession,
       summariesBySession,
       selection: isSelected ? { kind: "none" } : state.selection,
@@ -58,6 +75,28 @@ export async function removeSession(sessionId: string) {
     };
   });
   disposeSessionRuntime(sessionId);
+}
+
+export async function loadMoreGlobalSessions() {
+  const state = getState();
+  const pageState = state.globalSessionsPage;
+  if (pageState.loading || !pageState.hasMore) return;
+  setState((current) => ({
+    ...current,
+    globalSessionsPage: { ...current.globalSessionsPage, loading: true },
+  }));
+  const result = await getSessionsPage({ global: true, page: pageState.page + 1 });
+  setState((current) => ({
+    ...current,
+    globalSessions: [...current.globalSessions, ...result.sessions],
+    globalSessionsPage: {
+      page: result.page,
+      total: result.total,
+      hasMore: result.has_more,
+      loaded: true,
+      loading: false,
+    },
+  }));
 }
 
 export async function hydrateSession(sessionId: string) {

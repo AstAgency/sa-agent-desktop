@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ChatCompletionError } from "../../lib/api.js";
 import { sendUserMessage } from "./message-flow.js";
 import type { RuntimeInternals } from "./types.js";
 import type { Message, Summary } from "../../lib/types.js";
 
-test("sendUserMessage rethrows a stream error captured by the runtime", async () => {
-  const streamError = new Error("hourly token limit exceeded");
+test("sendUserMessage removes the optimistic user message on a 429 stream error", async () => {
+  const streamError = new ChatCompletionError(
+    429,
+    "hourly token limit exceeded",
+    "rate_limited",
+  );
   let continueCalled = 0;
   let notified = 0;
   const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
 
-  globalThis.fetch = (async () =>
-    new Response(
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response(
       JSON.stringify({
         id: "message-1",
         session_id: "session-1",
@@ -23,7 +30,8 @@ test("sendUserMessage rethrows a stream error captured by the runtime", async ()
         status: 200,
         headers: { "content-type": "application/json" },
       },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   const rt: RuntimeInternals = {
     input: {
@@ -64,6 +72,8 @@ test("sendUserMessage rethrows a stream error captured by the runtime", async ()
     model: "deepseek-v4-pro",
     inflightAbort: null,
     lastRunError: null,
+    currentTurnLocalUserMessageId: null,
+    currentTurnUserTimestamp: 0,
     currentTurnUserText: "",
     currentTurnId: "",
     persistenceChain: Promise.resolve(),
@@ -78,9 +88,12 @@ test("sendUserMessage rethrows a stream error captured by the runtime", async ()
   try {
     await assert.rejects(() => sendUserMessage(rt, "hello"), streamError);
     assert.equal(continueCalled, 1);
+    assert.equal(fetchCalls, 0);
     assert.equal(rt.lastRunError, null);
     assert.equal(rt.state.isStreaming, false);
     assert.equal(rt.state.streamingFinalText, "");
+    assert.deepEqual(rt.state.messages, []);
+    assert.deepEqual(rt.agent.state.messages, []);
     assert.ok(notified > 0);
   } finally {
     globalThis.fetch = originalFetch;

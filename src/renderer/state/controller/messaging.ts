@@ -51,6 +51,10 @@ export async function sendMessage(
       setState((s) => ({
         ...s,
         globalSessions: [session, ...s.globalSessions],
+        globalSessionsPage: {
+          ...s.globalSessionsPage,
+          total: s.globalSessionsPage.total + 1,
+        },
         selection: { kind: "session", sessionId: session.id },
         messagesBySession: { ...s.messagesBySession, [session.id]: [] },
         summariesBySession: { ...s.summariesBySession, [session.id]: [] },
@@ -66,6 +70,16 @@ export async function sendMessage(
         projectSessions: {
           ...s.projectSessions,
           [projectId]: [session, ...(s.projectSessions[projectId] ?? [])],
+        },
+        projectSessionsPage: {
+          ...s.projectSessionsPage,
+          [projectId]: {
+            page: s.projectSessionsPage[projectId]?.page ?? 0,
+            total: (s.projectSessionsPage[projectId]?.total ?? 0) + 1,
+            hasMore: s.projectSessionsPage[projectId]?.hasMore ?? false,
+            loaded: s.projectSessionsPage[projectId]?.loaded ?? true,
+            loading: s.projectSessionsPage[projectId]?.loading ?? false,
+          },
         },
         selection: { kind: "session", sessionId: session.id },
         messagesBySession: { ...s.messagesBySession, [session.id]: [] },

@@ -98,6 +98,8 @@ export interface RuntimeInternals {
   model: string;
   inflightAbort: AbortController | null;
   lastRunError: unknown | null;
+  currentTurnLocalUserMessageId: string | null;
+  currentTurnUserTimestamp: number;
   currentTurnUserText: string;
   // Id of the user message for the in-flight turn. Execution events are
   // tagged with it so the UI can group a turn's events and keep them after

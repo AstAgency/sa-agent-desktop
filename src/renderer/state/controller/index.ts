@@ -8,6 +8,7 @@ import type { Message, Summary } from "../../lib/types";
 export { startPythonRuntime, bootstrap, refreshBilling } from "../controller/bootstrap";
 export {
   loadProjectSessions,
+  loadMoreProjectSessions,
   createProjectAndSelect,
   createProjectViaTool,
   renameProject,
@@ -18,6 +19,7 @@ export { saveGlobalMemory } from "../controller/memory";
 export {
   renameSession,
   removeSession,
+  loadMoreGlobalSessions,
   deriveDisplayName,
 } from "../controller/sessions";
 export {

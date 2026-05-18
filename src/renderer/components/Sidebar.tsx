@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   createProjectAndSelect,
+  loadMoreGlobalSessions,
+  loadMoreProjectSessions,
   loadProjectSessions,
   removeProject,
   removeSession,
@@ -38,8 +40,10 @@ type DeletePending =
 export function Sidebar() {
   const profile = useClientState((state) => state.profile);
   const globalSessions = useClientState((state) => state.globalSessions);
+  const globalSessionsPage = useClientState((state) => state.globalSessionsPage);
   const projects = useClientState((state) => state.projects);
   const projectSessions = useClientState((state) => state.projectSessions);
+  const projectSessionsPage = useClientState((state) => state.projectSessionsPage);
   const selection = useClientState((state) => state.selection);
   const navigationLocked = useClientState((state) => isNavigationLocked(state));
   const collapsed = useClientState((state) => state.sidebarCollapsed);
@@ -132,6 +136,18 @@ export function Sidebar() {
                     }
                   />
                 ))}
+                {globalSessionsPage.hasMore ? (
+                  <li>
+                    <button
+                      className="inline-link"
+                      disabled={navigationLocked || globalSessionsPage.loading}
+                      title={navigationLocked ? navigationLockReason : undefined}
+                      onClick={() => void loadMoreGlobalSessions()}
+                    >
+                      {translate(language, "sidebar.loadMore")}
+                    </button>
+                  </li>
+                ) : null}
               </ul>
             </div>
 
@@ -157,13 +173,15 @@ export function Sidebar() {
                     projectId={project.id}
                     name={project.name}
                     sessions={sessions}
+                    pageState={projectSessionsPage[project.id]}
                     selection={selection}
                     language={language}
                     onLoadSessions={() => {
-                      if (!projectSessions[project.id]) {
+                      if (!projectSessionsPage[project.id]?.loaded) {
                         void loadProjectSessions(project.id);
                       }
                     }}
+                    onLoadMoreSessions={() => void loadMoreProjectSessions(project.id)}
                     disabled={navigationLocked}
                     disabledReason={navigationLockReason}
                     onNewChat={() => startNewProjectSession(project.id)}
@@ -266,11 +284,13 @@ function ProjectGroup(props: {
   projectId: string;
   name: string;
   sessions: { id: string; display_name: string }[];
+  pageState?: { hasMore: boolean; loading: boolean; loaded: boolean };
   selection: { kind: string; sessionId?: string; projectId?: string };
   language: AppLanguage;
   disabled: boolean;
   disabledReason: string;
   onLoadSessions: () => void;
+  onLoadMoreSessions: () => void;
   onNewChat: () => void;
   onSelectSession: (sessionId: string) => void;
   onDeleteProject: () => void;
@@ -347,7 +367,7 @@ function ProjectGroup(props: {
         )}
       </summary>
       <ul className="sidebar-list project-children">
-        {props.sessions.length === 0 ? (
+        {props.pageState?.loaded && props.sessions.length === 0 ? (
           <li className="empty">{translate(props.language, "sidebar.projectNoSessions")}</li>
         ) : null}
         {props.sessions.map((session) => (
@@ -366,6 +386,22 @@ function ProjectGroup(props: {
             onDelete={() => props.onDeleteSession(session.id, session.display_name)}
           />
         ))}
+        {props.pageState?.hasMore ? (
+          <li>
+            <button
+              className="inline-link"
+              disabled={props.disabled || props.pageState.loading}
+              title={props.disabled ? props.disabledReason : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onLoadMoreSessions();
+              }}
+            >
+              {translate(props.language, "sidebar.loadMore")}
+            </button>
+          </li>
+        ) : null}
       </ul>
       {menuOpen ? (
         <ContextMenu

@@ -11,6 +11,25 @@ function isHourlyTokenLimitError(error: ChatCompletionError): boolean {
   );
 }
 
+function getLanguageLocale(language: AppLanguage): string {
+  return language === "ru" ? "ru-RU" : "en-US";
+}
+
+export function formatResetAtForUser(
+  resetAt: string,
+  language: AppLanguage,
+  timeZone?: string,
+): string {
+  const date = new Date(resetAt);
+  if (Number.isNaN(date.getTime())) return resetAt;
+
+  return new Intl.DateTimeFormat(getLanguageLocale(language), {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+  }).format(date);
+}
+
 export function describeStreamError(
   error: unknown,
   language: AppLanguage,
@@ -29,7 +48,7 @@ export function describeStreamError(
       return {
         kind,
         message: translate(language, "chat.error.rateLimit.hourly", {
-          resetAt: billing.hourly_reset_at,
+          resetAt: formatResetAtForUser(billing.hourly_reset_at, language),
         }),
       };
     }

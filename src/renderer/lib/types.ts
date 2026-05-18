@@ -51,6 +51,13 @@ export type MessagesPage = {
   has_more: boolean;
 };
 
+export type SessionsPage = {
+  sessions: Session[];
+  total: number;
+  page: number;
+  has_more: boolean;
+};
+
 export type Summary = {
   id: string;
   session_id: string;

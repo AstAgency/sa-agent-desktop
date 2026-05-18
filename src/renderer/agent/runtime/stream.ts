@@ -9,8 +9,8 @@ import {
   type TextContent,
   type ToolCall as PiToolCall,
 } from "@earendil-works/pi-ai";
-import { streamChatCompletion } from "../../lib/api";
-import type { ChatMessage } from "../../lib/types";
+import { appendMessage, streamChatCompletion } from "../../lib/api";
+import type { ChatMessage, Message as PersistedMessage } from "../../lib/types";
 import { buildPrompt } from "../prompt-builder";
 import { getLiveMessages } from "../live-messages";
 import { retrieveRelevantSummaries } from "../search";
@@ -114,6 +114,9 @@ export async function runStream(
         tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
       },
       {
+        onAccepted: async () => {
+          await persistOptimisticUserMessage(rt);
+        },
         onDelta: (delta) => {
           if (textContent === null) {
             textContentIndex = partial.content.length;
@@ -261,4 +264,29 @@ export async function runStream(
     signal?.removeEventListener("abort", onParentAbort);
     rt.inflightAbort = null;
   }
+}
+
+async function persistOptimisticUserMessage(rt: RuntimeInternals): Promise<void> {
+  const localMessageId = rt.currentTurnLocalUserMessageId;
+  if (!localMessageId) return;
+
+  const saved = await appendMessage(rt.input.sessionId, "user", rt.currentTurnUserText);
+  rt.persistedMessageIds.add(saved.id);
+  rt.currentTurnId = saved.id;
+  rt.currentTurnLocalUserMessageId = null;
+  rt.state = {
+    ...rt.state,
+    messages: rt.state.messages.map((message) =>
+      message.id === localMessageId ? replaceOptimisticUserMessage(message, saved) : message,
+    ),
+  };
+  rt.notify();
+}
+
+function replaceOptimisticUserMessage(
+  current: PersistedMessage,
+  saved: PersistedMessage,
+): PersistedMessage {
+  if (current.id !== saved.id) return saved;
+  return saved;
 }

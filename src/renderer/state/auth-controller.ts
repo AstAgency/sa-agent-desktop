@@ -25,7 +25,6 @@ import {
   type AuthSession,
 } from "../lib/auth-api";
 
-import { getProfile } from "../lib/api";
 import { setAuthInvalidationHandler } from "../lib/api";
 
 import {
@@ -70,67 +69,40 @@ setAuthInvalidationHandler( () => {
  *   2. Если session нет:
  *        → unauthenticated
  *   3. Если session есть:
- *        → GET /v1/profile
- *        api.ts автоматически:
- *          - прикрепляет Bearer token
- *          - пытается refresh при 401
- *          - повторяет запрос после refresh
- *   4. Если profile успешно получен:
  *        → authenticated
- *   5. Если всё провалилось:
- *        → session invalid
- *        → localStorage очищается
- *        → unauthenticated
+ *        → App.tsx отдельно запускает bootstrap()
+ *          и уже он делает единственный GET /v1/profile
  */
+let inflightInitializeAuth: Promise<boolean> | null = null;
+
 export async function initializeAuth(): Promise<boolean> {
-  setAuthLoading();
-  /**
-   * Пытаемся восстановить session из localStorage.
-   */
-  const stored = getAuthSession();
-  /**
-   * Нет session → сразу unauthenticated.
-   */
-  if ( !stored ) {
-    setAuthUnauthenticated( null );
-    return false;
-  }
+  if ( inflightInitializeAuth ) return inflightInitializeAuth;
 
-  try {
+  inflightInitializeAuth = (async () => {
+    setAuthLoading();
     /**
-     * Проверяем что access token ещё валиден.
-     *
-     * Если access token expired:
-     * api.ts сам попробует refresh flow.
+     * Пытаемся восстановить session из localStorage.
      */
-    await getProfile();
+    const stored = getAuthSession();
     /**
-     * Session валидна.
-     *
-     * App.tsx увидит authStatus === authenticated
-     * и отдельно запустит bootstrap().
+     * Нет session → сразу unauthenticated.
      */
-    setAuthAuthenticated( stored );
-
-    return true;
-  } catch ( error ) {
-    /**
-     * Любая ошибка здесь означает:
-     * - refresh flow тоже не помог;
-     * - session больше использовать нельзя.
-     */
-
-    if ( getState().auth.status !== "unauthenticated" ) {
-      clearAuthSession();
-      setAuthUnauthenticated(
-        error instanceof Error
-          ? error.message
-          : "session_invalid",
-      );
+    if ( !stored ) {
+      setAuthUnauthenticated( null );
+      return false;
     }
 
-    return false;
-  }
+    /**
+     * Сетевую валидацию не делаем здесь, чтобы не дублировать GET /v1/profile.
+     * Единственный authoritative profile fetch идёт внутри bootstrap().
+     */
+    setAuthAuthenticated( stored );
+    return true;
+  })().finally( () => {
+    inflightInitializeAuth = null;
+  } );
+
+  return inflightInitializeAuth;
 }
 
 /**
@@ -249,7 +221,9 @@ export function signOut(): void {
     profile: null,
     projects: [],
     globalSessions: [],
+    globalSessionsPage: { page: 0, total: 0, hasMore: false, loading: false, loaded: false },
     projectSessions: {},
+    projectSessionsPage: {},
     messagesBySession: {},
     summariesBySession: {},
     selection: {

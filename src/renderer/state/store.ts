@@ -13,6 +13,14 @@ import type {
   Summary,
 } from "../lib/types";
 
+export type SessionListPageState = {
+  page: number;
+  total: number;
+  hasMore: boolean;
+  loading: boolean;
+  loaded: boolean;
+};
+
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
 export type AuthSlice = {
@@ -48,7 +56,9 @@ export type ClientState = {
   profile: Profile | null;
   projects: Project[];
   globalSessions: Session[];
+  globalSessionsPage: SessionListPageState;
   projectSessions: Record<string, Session[]>;
+  projectSessionsPage: Record<string, SessionListPageState>;
   embeddingModel: EmbeddingModelInfo | null;
   agents: Agent[];
   selectedAgentKey: string | null;
@@ -101,7 +111,9 @@ const initialState: ClientState = {
   profile: null,
   projects: [],
   globalSessions: [],
+  globalSessionsPage: { page: 0, total: 0, hasMore: false, loading: false, loaded: false },
   projectSessions: {},
+  projectSessionsPage: {},
   embeddingModel: null,
   agents: [],
   selectedAgentKey: null,

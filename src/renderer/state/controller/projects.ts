@@ -1,7 +1,7 @@
 import {
   createProject,
   deleteProject as deleteProjectRequest,
-  getProjectSessions,
+  getSessionsPage,
   updateProject as updateProjectRequest,
   updateProjectMemory,
 } from "../../lib/api";
@@ -10,10 +10,64 @@ import { isNavigationLocked } from "../navigation-lock";
 import { disposeSessionRuntime } from "./registry";
 
 export async function loadProjectSessions(projectId: string) {
-  const sessions = await getProjectSessions(projectId);
   setState((state) => ({
     ...state,
-    projectSessions: { ...state.projectSessions, [projectId]: sessions },
+    projectSessionsPage: {
+      ...state.projectSessionsPage,
+      [projectId]: {
+        page: 0,
+        total: state.projectSessionsPage[projectId]?.total ?? 0,
+        hasMore: false,
+        loaded: state.projectSessionsPage[projectId]?.loaded ?? false,
+        loading: true,
+      },
+    },
+  }));
+  const result = await getSessionsPage({ projectId, page: 1 });
+  setState((state) => ({
+    ...state,
+    projectSessions: { ...state.projectSessions, [projectId]: result.sessions },
+    projectSessionsPage: {
+      ...state.projectSessionsPage,
+      [projectId]: {
+        page: result.page,
+        total: result.total,
+        hasMore: result.has_more,
+        loaded: true,
+        loading: false,
+      },
+    },
+  }));
+}
+
+export async function loadMoreProjectSessions(projectId: string) {
+  const state = getState();
+  const pageState = state.projectSessionsPage[projectId];
+  if (!pageState || pageState.loading || !pageState.hasMore) return;
+  setState((current) => ({
+    ...current,
+    projectSessionsPage: {
+      ...current.projectSessionsPage,
+      [projectId]: { ...current.projectSessionsPage[projectId], loading: true },
+    },
+  }));
+  const result = await getSessionsPage({ projectId, page: pageState.page + 1 });
+  setState((current) => ({
+    ...current,
+    projectSessions: {
+      ...current.projectSessions,
+      [projectId]: [...(current.projectSessions[projectId] ?? []), ...result.sessions],
+    },
+    projectSessionsPage: {
+      ...current.projectSessionsPage,
+      [projectId]: {
+        page: result.page,
+        total: result.total,
+        hasMore: result.has_more,
+        loaded: true,
+        loading: false,
+      },
+    },
   }));
 }
 
@@ -43,6 +97,10 @@ async function createProjectFromInput(input: { name: string; description?: strin
     ...state,
     projects: [...state.projects, project],
     projectSessions: { ...state.projectSessions, [project.id]: [] },
+    projectSessionsPage: {
+      ...state.projectSessionsPage,
+      [project.id]: { page: 0, total: 0, hasMore: false, loaded: false, loading: false },
+    },
   }));
   return project;
 }
@@ -67,6 +125,7 @@ export async function removeProject(projectId: string) {
   setState((state) => {
     const nextProjects = state.projects.filter((existing) => existing.id !== projectId);
     const { [projectId]: _removed, ...nextProjectSessions } = state.projectSessions;
+    const { [projectId]: _removedPage, ...nextProjectSessionsPage } = state.projectSessionsPage;
     const selection = state.selection;
     const selectionTouchesProject =
       (selection.kind === "new-project" && selection.projectId === projectId) ||
@@ -81,6 +140,7 @@ export async function removeProject(projectId: string) {
       ...state,
       projects: nextProjects,
       projectSessions: nextProjectSessions,
+      projectSessionsPage: nextProjectSessionsPage,
       messagesBySession,
       summariesBySession,
       selection: selectionTouchesProject ? { kind: "none" } : state.selection,
