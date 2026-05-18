@@ -65,6 +65,9 @@ export function transcriptToChatMessages(
       result.push({
         role: "assistant",
         content: hasText ? message.content : null,
+        ...(message.reasoning_content !== undefined
+          ? { reasoning_content: message.reasoning_content }
+          : {}),
         ...(hasToolCalls ? { tool_calls: toolCalls } : {}),
       });
       continue;

@@ -38,6 +38,7 @@ export type Message = {
   session_id: string;
   role: MessageRole;
   content: string;
+  reasoning_content?: string | null;
   tool_calls?: OpenAIToolCallRecord[] | null;
   tool_call_id?: string | null;
   created_at: string;
@@ -119,6 +120,12 @@ export type Billing = {
   max_hourly: number;
   max_daily: number;
   max_weekly: number;
+  vision_hourly_usage?: number;
+  vision_daily_usage?: number;
+  vision_weekly_usage?: number;
+  vision_max_hourly?: number;
+  vision_max_daily?: number;
+  vision_max_weekly?: number;
   hourly_reset_at: string;
   daily_reset_at: string;
   weekly_reset_at: string;
@@ -136,7 +143,12 @@ export type OpenAIToolDefinition = {
 
 export type ChatMessage =
   | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: OpenAIToolCallRecord[] }
+  | {
+      role: "assistant";
+      content: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: OpenAIToolCallRecord[];
+    }
   | { role: "tool"; content: string; tool_call_id: string };
 
 export type ChatCompletionRequest = {
@@ -163,6 +175,7 @@ export type ChatCompletionResponse = {
     message: {
       role: "assistant";
       content: string | null;
+      reasoning_content?: string | null;
       tool_calls?: OpenAIToolCallRecord[];
     };
     finish_reason: string;
@@ -185,6 +198,7 @@ export type ChatCompletionChunk = {
     delta: {
       role?: "assistant";
       content?: string;
+      reasoning_content?: string;
       tool_calls?: ToolCallDelta[];
     };
     finish_reason?: string | null;

@@ -65,6 +65,7 @@ export type ClientState = {
   profileModalOpen: boolean;
   billing: Billing | null;
   lastStreamError: LastStreamError | null;
+  uiNotice: { id: number; message: string } | null;
 };
 
 const SETTINGS_KEY = "sa-agent.settings";
@@ -117,6 +118,7 @@ const initialState: ClientState = {
   profileModalOpen: false,
   billing: null,
   lastStreamError: null,
+  uiNotice: null,
 };
 
 function persistSettings(state: ClientState) {
@@ -137,6 +139,8 @@ type Listener = () => void;
 
 let currentState: ClientState = initialState;
 const listeners = new Set<Listener>();
+let uiNoticeCounter = 0;
+let uiNoticeTimeoutId: number | null = null;
 
 function emit() {
   for (const listener of listeners) listener();
@@ -179,6 +183,19 @@ export function setBilling(billing: Billing | null) {
 
 export function setLastStreamError(lastStreamError: LastStreamError | null) {
   setState((state) => ({ ...state, lastStreamError }));
+}
+
+export function showUiNotice(message: string, durationMs = 2800) {
+  uiNoticeCounter += 1;
+  const id = uiNoticeCounter;
+  if (typeof window !== "undefined") {
+    if (uiNoticeTimeoutId !== null) window.clearTimeout(uiNoticeTimeoutId);
+    uiNoticeTimeoutId = window.setTimeout(() => {
+      setState((state) => (state.uiNotice?.id === id ? { ...state, uiNotice: null } : state));
+      uiNoticeTimeoutId = null;
+    }, durationMs);
+  }
+  setState((state) => ({ ...state, uiNotice: { id, message } }));
 }
 
 export function setAuthLoading() {

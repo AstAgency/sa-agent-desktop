@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getVisionBillingSnapshot } from "../lib/billing-vision";
 import { getBridge } from "../lib/bridge";
 import { translate } from "../lib/i18n";
 import { getCurrentBackendUrl } from "../lib/api";
@@ -9,14 +10,16 @@ import {
   useClientState,
   type ThemeMode,
 } from "../state/store";
+import { refreshBilling } from "../state/controller";
 import { signOut } from "../state/auth-controller";
 import type { AppLanguage } from "../lib/i18n";
-import type { SearchStatus } from "../lib/types";
+import type { Billing, SearchStatus } from "../lib/types";
 
 export function UserProfileModal() {
   const language = useClientState((state) => state.language);
   const theme = useClientState((state) => state.theme);
   const profile = useClientState((state) => state.profile);
+  const billing = useClientState((state) => state.billing);
   const [searchStatus, setSearchStatus] = useState<SearchStatus>({ state: "stopped" });
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -92,93 +95,106 @@ export function UserProfileModal() {
             <span className="sub">{translate(language, "profile.subtitle")}</span>
           </div>
         </div>
-
-        <div className="section">
-          <h3>{translate(language, "profile.section.preferences")}</h3>
-          <div className="setting-row">
-            <span className="label">{translate(language, "profile.theme")}</span>
-            <div className="segmented" role="tablist">
-              <button
-                role="tab"
-                aria-selected={theme === "dark"}
-                className={theme === "dark" ? "active" : ""}
-                onClick={() => setTheme("dark" satisfies ThemeMode)}
-              >
-                {translate(language, "profile.theme.dark")}
-              </button>
-              <button
-                role="tab"
-                aria-selected={theme === "light"}
-                className={theme === "light" ? "active" : ""}
-                onClick={() => setTheme("light" satisfies ThemeMode)}
-              >
-                {translate(language, "profile.theme.light")}
-              </button>
+        <div className="profile-modal-body">
+          <div className="section">
+            <h3>{translate(language, "profile.section.preferences")}</h3>
+            <div className="setting-row">
+              <span className="label">{translate(language, "profile.theme")}</span>
+              <div className="segmented" role="tablist">
+                <button
+                  role="tab"
+                  aria-selected={theme === "dark"}
+                  className={theme === "dark" ? "active" : ""}
+                  onClick={() => setTheme("dark" satisfies ThemeMode)}
+                >
+                  {translate(language, "profile.theme.dark")}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={theme === "light"}
+                  className={theme === "light" ? "active" : ""}
+                  onClick={() => setTheme("light" satisfies ThemeMode)}
+                >
+                  {translate(language, "profile.theme.light")}
+                </button>
+              </div>
+            </div>
+            <div className="setting-row">
+              <span className="label">{translate(language, "profile.language")}</span>
+              <div className="segmented" role="tablist">
+                <button
+                  role="tab"
+                  aria-selected={language === "en"}
+                  className={language === "en" ? "active" : ""}
+                  onClick={() => setLanguage("en" satisfies AppLanguage)}
+                >
+                  {translate(language, "profile.language.en")}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={language === "ru"}
+                  className={language === "ru" ? "active" : ""}
+                  onClick={() => setLanguage("ru" satisfies AppLanguage)}
+                >
+                  {translate(language, "profile.language.ru")}
+                </button>
+              </div>
             </div>
           </div>
-          <div className="setting-row">
-            <span className="label">{translate(language, "profile.language")}</span>
-            <div className="segmented" role="tablist">
-              <button
-                role="tab"
-                aria-selected={language === "en"}
-                className={language === "en" ? "active" : ""}
-                onClick={() => setLanguage("en" satisfies AppLanguage)}
-              >
-                {translate(language, "profile.language.en")}
-              </button>
-              <button
-                role="tab"
-                aria-selected={language === "ru"}
-                className={language === "ru" ? "active" : ""}
-                onClick={() => setLanguage("ru" satisfies AppLanguage)}
-              >
-                {translate(language, "profile.language.ru")}
-              </button>
-            </div>
-          </div>
-        </div>
 
-        <div className="section">
-          <h3>{translate(language, "profile.section.account")}</h3>
-          {profile ? (
+          <div className="section">
+            <h3>{translate(language, "profile.section.account")}</h3>
+            {profile ? (
+              <div className="detail-row">
+                <span className="key">{translate(language, "profile.userId")}</span>
+                <span className="value" title={profile.id}>{profile.id}</span>
+              </div>
+            ) : null}
             <div className="detail-row">
-              <span className="key">{translate(language, "profile.userId")}</span>
-              <span className="value" title={profile.id}>{profile.id}</span>
+              <span className="key">{translate(language, "profile.backend")}</span>
+              <span className="value" title={getCurrentBackendUrl()}>{getCurrentBackendUrl()}</span>
             </div>
-          ) : null}
-          <div className="detail-row">
-            <span className="key">{translate(language, "profile.backend")}</span>
-            <span className="value" title={getCurrentBackendUrl()}>{getCurrentBackendUrl()}</span>
           </div>
-        </div>
 
-        <div className="section">
-          <h3>{translate(language, "profile.section.search")}</h3>
-          <p className="profile-search-description">
-            {translate(language, "profile.search.description")}
-          </p>
-          <div className="detail-row">
-            <span className="key">{translate(language, "profile.search.status")}</span>
-            <span className={`value status-badge status-${searchStatus.state}`}>
-              {statusBadge}
-            </span>
+          <div className="section">
+            <div className="section-header-inline">
+              <h3>{translate(language, "usage.title")}</h3>
+              <div className="segmented" role="group" aria-label={translate(language, "usage.refresh")}>
+                <button className="active" type="button" onClick={() => void refreshBilling()}>
+                  {translate(language, "usage.refresh")}
+                </button>
+              </div>
+            </div>
+            <ProfileBillingSection billing={billing} language={language} />
           </div>
-          <div className="profile-inline-actions">
-            <button
-              className="primary"
-              type="button"
-              onClick={() => void handleSearchStart()}
-              disabled={!canStart}
-            >
-              {searchBusy || searchStatus.state === "starting"
-                ? translate(language, "profile.search.starting")
-                : translate(language, "profile.search.start")}
-            </button>
+
+          <div className="section">
+            <h3>{translate(language, "profile.section.search")}</h3>
+            <p className="profile-search-description">
+              {translate(language, "profile.search.description")}
+            </p>
+            <div className="detail-row">
+              <span className="key">{translate(language, "profile.search.status")}</span>
+              <span className={`value status-badge status-${searchStatus.state}`}>
+                {statusBadge}
+              </span>
+            </div>
+            <div className="profile-inline-actions">
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void handleSearchStart()}
+                disabled={!canStart}
+              >
+                {searchBusy || searchStatus.state === "starting"
+                  ? translate(language, "profile.search.starting")
+                  : translate(language, "profile.search.start")}
+              </button>
+            </div>
+            {searchError && searchStatus.state !== "failed" ? (
+              <div className="profile-status error">{searchError}</div>
+            ) : null}
           </div>
-          {searchError && searchStatus.state !== "failed" ? (
-            <div className="profile-status error">{searchError}</div>
-          ) : null}
         </div>
 
         <div className="footer">
@@ -224,4 +240,77 @@ function renderStatusBadge(status: SearchStatus, language: AppLanguage): string 
     default:
       return translate(language, "profile.search.status.stopped");
   }
+}
+
+function ProfileBillingSection({
+  billing,
+  language,
+}: {
+  billing: Billing | null;
+  language: AppLanguage;
+}) {
+  const vision = getVisionBillingSnapshot(billing);
+
+  return (
+    <div className="profile-billing-grid">
+      <div className="profile-billing-card">
+        <h4>{translate(language, "usage.tokenLimits")}</h4>
+        {billing ? (
+          <>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.hourly")}</span>
+              <span className="value">
+                {billing.hourly_usage} / {billing.max_hourly}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.daily")}</span>
+              <span className="value">
+                {billing.daily_usage} / {billing.max_daily}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.weekly")}</span>
+              <span className="value">
+                {billing.weekly_usage} / {billing.max_weekly}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="detail-row">
+            <span className="value">{translate(language, "usage.notAvailable")}</span>
+          </div>
+        )}
+      </div>
+      <div className="profile-billing-card">
+        <h4>{translate(language, "usage.imageLimits")}</h4>
+        {vision.available ? (
+          <>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.perHour")}</span>
+              <span className="value">
+                {vision.hourlyUsage} / {vision.maxHourly}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.perDay")}</span>
+              <span className="value">
+                {vision.dailyUsage} / {vision.maxDaily}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="key">{translate(language, "usage.perWeek")}</span>
+              <span className="value">
+                {vision.weeklyUsage} / {vision.maxWeekly}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="detail-row">
+            <span className="value">{translate(language, "usage.notAvailable")}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

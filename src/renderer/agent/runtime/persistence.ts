@@ -2,7 +2,11 @@ import type { Message as PiMessage } from "@earendil-works/pi-ai";
 import { appendMessage } from "../../lib/api";
 import type { Message } from "../../lib/types";
 import { summarizeToolResultForHistory } from "../tool-result-summary";
-import { extractAssistantText, extractAssistantToolCalls } from "./converters";
+import {
+  extractAssistantReasoningContent,
+  extractAssistantText,
+  extractAssistantToolCalls,
+} from "./converters";
 import type { RuntimeInternals } from "./types";
 
 export function enqueuePersistence(rt: RuntimeInternals, work: () => Promise<void>) {
@@ -16,8 +20,10 @@ export async function persistAgentMessage(rt: RuntimeInternals, message: PiMessa
     if (message.role === "assistant") {
       const text = extractAssistantText(message);
       const toolCalls = extractAssistantToolCalls(message);
+      const reasoningContent = extractAssistantReasoningContent(message);
       if (text.trim().length === 0 && toolCalls.length === 0) return;
       const saved = await appendMessage(rt.input.sessionId, "assistant", text, {
+        reasoning_content: reasoningContent,
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
       });
       appendPersistedMessage(rt, saved);

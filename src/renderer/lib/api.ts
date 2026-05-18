@@ -295,6 +295,7 @@ export async function getAllSessionMessages(
 }
 
 export type AppendMessageOptions = RequestOptions & {
+  reasoning_content?: string | null;
   tool_calls?: OpenAIToolCallRecord[] | null;
   tool_call_id?: string | null;
 };
@@ -306,6 +307,7 @@ export function appendMessage(
   options?: AppendMessageOptions,
 ): Promise<Message> {
   const body: Record<string, unknown> = { role, content };
+  if (options?.reasoning_content !== undefined) body.reasoning_content = options.reasoning_content;
   if (options?.tool_calls && options.tool_calls.length > 0) body.tool_calls = options.tool_calls;
   if (options?.tool_call_id) body.tool_call_id = options.tool_call_id;
   return request("POST", `/v1/sessions/${sessionId}/messages`, body, { signal: options?.signal });
@@ -508,6 +510,7 @@ export type StreamChatHandlers = {
 
 export type StreamChatResult = {
   content: string;
+  reasoning_content: string | null;
   total_tokens: number;
   tool_calls: OpenAIToolCallRecord[];
   finish_reason: string | null;
@@ -538,6 +541,7 @@ export async function streamChatCompletion(
   const decoder = new TextDecoder();
   let buffer = "";
   let assembledContent = "";
+  let assembledReasoningContent = "";
   let totalTokens = 0;
   let finishReason: string | null = null;
   const toolCalls = new Map<number, ToolCallAccumulator>();
@@ -574,6 +578,11 @@ export async function streamChatCompletion(
         handlers.onDelta?.(delta);
       }
 
+      const reasoningDelta = choice?.delta?.reasoning_content;
+      if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
+        assembledReasoningContent += reasoningDelta;
+      }
+
       const toolDeltas = choice?.delta?.tool_calls;
       if (toolDeltas) {
         for (const toolDelta of toolDeltas) {
@@ -606,6 +615,7 @@ export async function streamChatCompletion(
 
   return {
     content: assembledContent,
+    reasoning_content: assembledReasoningContent.length > 0 ? assembledReasoningContent : null,
     total_tokens: totalTokens,
     tool_calls: collectedToolCalls,
     finish_reason: finishReason,

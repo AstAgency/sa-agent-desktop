@@ -79,6 +79,23 @@ test("transcriptToChatMessages keeps assistant text alongside tool calls", () =>
   assert.equal(transcript[2]?.role, "tool");
 });
 
+test("transcriptToChatMessages passes assistant reasoning_content back to the API", () => {
+  const transcript = transcriptToChatMessages([
+    msg({
+      id: "a",
+      role: "assistant",
+      content: "Visible answer",
+      reasoning_content: "Hidden reasoning",
+    }),
+  ]);
+
+  assert.deepEqual(transcript[0], {
+    role: "assistant",
+    content: "Visible answer",
+    reasoning_content: "Hidden reasoning",
+  });
+});
+
 test("transcriptToChatMessages drops orphan tool results with no matching call", () => {
   const transcript = transcriptToChatMessages([
     msg({ id: "u", role: "user", content: "hi" }),

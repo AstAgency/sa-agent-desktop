@@ -13,6 +13,6 @@ test("navigation is not locked when nothing is streaming", () => {
 test("lock reason explains how to resume navigation", () => {
   assert.equal(
     getNavigationLockReason("en"),
-    "Stop the current generation to switch chats.",
+    "Wait for the agent to finish or press Stop before switching chats, changing the agent, or attaching files.",
   );
 });

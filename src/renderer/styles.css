@@ -687,46 +687,6 @@ details > summary:hover .row-kebab {
   gap: 12px;
 }
 
-.billing-badge {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 0;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--bg-elevated-strong);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.billing-badge:hover { background: var(--bg-elevated); }
-
-.billing-cell {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 10px;
-  border-right: 1px solid var(--border);
-  min-width: 56px;
-  line-height: 1.2;
-}
-
-.billing-cell:last-child { border-right: none; }
-
-.billing-cell .label {
-  font-size: 9px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.billing-cell .value {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
 .chat-history {
   flex: 1;
   position: relative;
@@ -1360,6 +1320,24 @@ details > summary:hover .row-kebab {
 .banner.error { color: var(--danger); }
 .banner.success { color: var(--success); }
 
+.app-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 80;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, black);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .inline-link {
   background: none;
   border: none;
@@ -1470,6 +1448,8 @@ details > summary:hover .row-kebab {
 .profile-modal {
   width: 480px;
   max-width: calc(100vw - 32px);
+  height: min(760px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -1478,6 +1458,12 @@ details > summary:hover .row-kebab {
   flex-direction: column;
   overflow: hidden;
   animation: fadeInScale 200ms ease;
+}
+
+.profile-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: scroll;
 }
 
 .profile-modal .header {
@@ -1541,6 +1527,13 @@ details > summary:hover .row-kebab {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
+}
+
+.section-header-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .profile-field {
@@ -1623,6 +1616,30 @@ details > summary:hover .row-kebab {
   white-space: nowrap;
 }
 
+.profile-billing-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.profile-billing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-elevated-strong);
+  border: 1px solid var(--border);
+}
+
+.profile-billing-card h4 {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .profile-inline-actions {
   display: flex;
   justify-content: flex-start;
@@ -1655,6 +1672,7 @@ details > summary:hover .row-kebab {
 }
 
 .profile-modal .footer {
+  flex-shrink: 0;
   padding: 14px 22px;
   display: flex;
   justify-content: flex-end;

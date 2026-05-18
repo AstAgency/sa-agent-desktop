@@ -18,6 +18,7 @@ export function App() {
   const sidebarCollapsed = useClientState((state) => state.sidebarCollapsed);
   const profileModalOpen = useClientState((state) => state.profileModalOpen);
   const authStatus = useClientState((state) => state.auth.status);
+  const uiNotice = useClientState((state) => state.uiNotice);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -95,6 +96,7 @@ export function App() {
       <Sidebar />
       <ChatView />
       {profileModalOpen ? <UserProfileModal /> : null}
+      {uiNotice ? <div className="app-toast" role="status" aria-live="polite">{uiNotice.message}</div> : null}
     </div>
   );
 }

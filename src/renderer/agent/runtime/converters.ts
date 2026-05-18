@@ -6,8 +6,8 @@ import type {
   ToolCall as PiToolCall,
 } from "@earendil-works/pi-ai";
 import type { Model } from "@earendil-works/pi-ai";
-import type { Message, OpenAIToolCallRecord } from "../../lib/types";
-import { BACKEND_MODEL } from "./constants";
+import type { Message, OpenAIToolCallRecord } from "../../lib/types.js";
+import { BACKEND_MODEL } from "./constants.js";
 
 export function buildPartialAssistantMessage(model: Model<Api>): AssistantMessage {
   return {
@@ -28,6 +28,10 @@ export function buildPartialAssistantMessage(model: Model<Api>): AssistantMessag
     timestamp: Date.now(),
   };
 }
+
+type AssistantMessageWithReasoning = AssistantMessage & {
+  reasoning_content?: string | null;
+};
 
 export function buildErrorAssistantMessage(
   model: Model<Api>,
@@ -64,9 +68,10 @@ export function hydrateAgentMessages(messages: Message[]): PiMessage[] {
           });
         }
       }
-      result.push({
+      const assistantMessage: AssistantMessageWithReasoning = {
         role: "assistant",
         content,
+        reasoning_content: message.reasoning_content ?? null,
         api: BACKEND_MODEL.api,
         provider: BACKEND_MODEL.provider,
         model: BACKEND_MODEL.id,
@@ -80,7 +85,8 @@ export function hydrateAgentMessages(messages: Message[]): PiMessage[] {
         },
         stopReason: "stop",
         timestamp,
-      });
+      };
+      result.push(assistantMessage as PiMessage);
       continue;
     }
     if (message.role === "tool") {
@@ -114,6 +120,12 @@ export function extractAssistantToolCalls(message: PiMessage): OpenAIToolCallRec
       type: "function" as const,
       function: { name: block.name, arguments: JSON.stringify(block.arguments ?? {}) },
     }));
+}
+
+export function extractAssistantReasoningContent(message: PiMessage): string | null {
+  if (message.role !== "assistant") return null;
+  const reasoning = (message as AssistantMessageWithReasoning).reasoning_content;
+  return typeof reasoning === "string" ? reasoning : null;
 }
 
 export function parseToolArguments(text: string): Record<string, unknown> {

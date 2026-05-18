@@ -9,7 +9,6 @@ import {
 } from "react";
 import {
   abortActiveTurn,
-  refreshBilling,
   sendMessage,
   setSelectedAgent,
   startNewGlobalSession,
@@ -19,11 +18,13 @@ import {
   selectActiveProject,
   selectActiveSession,
   setLastStreamError,
+  showUiNotice,
   useClientState,
 } from "../state/store";
 import { THINKING_WORDS, translate, type AppLanguage } from "../lib/i18n";
-import type { Billing, Message } from "../lib/types";
+import type { Message } from "../lib/types";
 import type { WorkspaceScope } from "../lib/types";
+import { getNavigationLockReason, isNavigationLocked } from "../state/navigation-lock";
 import type { RuntimeTraceEvent } from "../agent/runtime";
 import { Markdown } from "./Markdown";
 import {
@@ -65,7 +66,6 @@ export function ChatView() {
   const runtimeTrace = useClientState((state) => state.runtimeTrace ?? EMPTY_TRACE);
   const sending = useClientState((state) => state.sendingMessage);
   const loadingSessionId = useClientState((state) => state.loadingSessionId);
-  const billing = useClientState((state) => state.billing);
   const lastStreamError = useClientState((state) => state.lastStreamError);
 
   const turns = useMemo(() => groupTurns(rawMessages), [rawMessages]);
@@ -120,7 +120,6 @@ export function ChatView() {
         <header className="chat-header">
           <div className="chat-header-top">
             <h2>{title}</h2>
-            <BillingBadge billing={billing} language={language} />
           </div>
           <span className="meta">
             {scopeLabel} · {translate(language, "chat.session.id")}: {sessionLabel}
@@ -209,45 +208,6 @@ export function ChatView() {
         />
       </div>
     </main>
-  );
-}
-
-function BillingBadge({
-  billing,
-  language,
-}: {
-  billing: Billing | null;
-  language: AppLanguage;
-}) {
-  if (!billing) return null;
-  return (
-    <button
-      type="button"
-      className="billing-badge"
-      onClick={() => {
-        void refreshBilling();
-      }}
-      title={translate(language, "usage.refresh")}
-    >
-      <span className="billing-cell">
-        <span className="label">{translate(language, "usage.hourly")}</span>
-        <span className="value">
-          {billing.hourly_usage}/{billing.max_hourly}
-        </span>
-      </span>
-      <span className="billing-cell">
-        <span className="label">{translate(language, "usage.daily")}</span>
-        <span className="value">
-          {billing.daily_usage}/{billing.max_daily}
-        </span>
-      </span>
-      <span className="billing-cell">
-        <span className="label">{translate(language, "usage.weekly")}</span>
-        <span className="value">
-          {billing.weekly_usage}/{billing.max_weekly}
-        </span>
-      </span>
-    </button>
   );
 }
 
@@ -588,6 +548,11 @@ function Composer(props: {
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const interactionsLocked = props.sending;
+
+  function notifyLocked() {
+    showUiNotice(getNavigationLockReason(props.language));
+  }
 
   async function submit() {
     setError(null);
@@ -629,6 +594,10 @@ function Composer(props: {
   }
 
   async function appendAttachments(nextAttachments: ComposerAttachment[]) {
+    if (interactionsLocked) {
+      notifyLocked();
+      return;
+    }
     if (nextAttachments.length === 0) return;
     const combined = [...attachments, ...nextAttachments];
     const typeError = validateAttachmentTypes(combined, attachmentAllowedExtensions);
@@ -646,6 +615,10 @@ function Composer(props: {
   }
 
   async function handleOpenFiles() {
+    if (interactionsLocked) {
+      notifyLocked();
+      return;
+    }
     try {
       const opened = await getBridge().dialog.openFiles();
       await appendAttachments(opened.map(mapBridgeAttachment));
@@ -656,6 +629,10 @@ function Composer(props: {
 
   async function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
+    if (interactionsLocked) {
+      notifyLocked();
+      return;
+    }
     const files = Array.from(event.dataTransfer.files).filter(
       (file) => !(file.size === 0 && file.type === ""),
     );
@@ -674,6 +651,11 @@ function Composer(props: {
       .filter((file): file is File => file !== null);
     const files = itemFiles.length > 0 ? itemFiles : Array.from(clipboard?.files ?? []);
     if (files.length === 0) return;
+    if (interactionsLocked) {
+      event.preventDefault();
+      notifyLocked();
+      return;
+    }
 
     event.preventDefault();
 
@@ -735,9 +717,13 @@ function Composer(props: {
                 type="button"
                 className="attachment-remove"
                 aria-label={translate(props.language, "chat.attachRemove")}
-                onClick={() =>
-                  setAttachments((current) => current.filter((_, currentIndex) => currentIndex !== index))
-                }
+                onClick={() => {
+                  if (interactionsLocked) {
+                    notifyLocked();
+                    return;
+                  }
+                  setAttachments((current) => current.filter((_, currentIndex) => currentIndex !== index));
+                }}
               >
                 ×
               </button>
@@ -751,7 +737,13 @@ function Composer(props: {
           {translate(props.language, "chat.agent")}
           <select
             value={props.selectedAgentKey ?? ""}
-            onChange={(event) => props.onSelectAgent(event.target.value || null)}
+            onChange={(event) => {
+              if (interactionsLocked) {
+                notifyLocked();
+                return;
+              }
+              props.onSelectAgent(event.target.value || null);
+            }}
           >
             <option key="__default__" value="">
               {translate(props.language, "chat.agent.default")}
@@ -768,6 +760,10 @@ function Composer(props: {
             type="button"
             className="secondary icon-only-button"
             onClick={() => {
+              if (interactionsLocked) {
+                notifyLocked();
+                return;
+              }
               void handleOpenFiles();
             }}
             title={translate(props.language, "chat.attachFiles")}

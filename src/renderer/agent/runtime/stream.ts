@@ -186,6 +186,10 @@ export async function runStream(
     );
 
     const finalText = textContent as TextContent | null;
+    if (result.reasoning_content !== null) {
+      (partial as { reasoning_content?: string | null }).reasoning_content =
+        result.reasoning_content;
+    }
     if (finalText !== null && textContentIndex !== null) {
       stream.push({
         type: "text_end",
