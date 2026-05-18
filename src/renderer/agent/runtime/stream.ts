@@ -13,7 +13,7 @@ import { appendMessage, streamChatCompletion } from "../../lib/api";
 import type { ChatMessage, Message as PersistedMessage } from "../../lib/types";
 import { buildPrompt } from "../prompt-builder";
 import { getLiveMessages } from "../live-messages";
-import { retrieveRelevantSummaries } from "../search";
+import { buildRetrievalQuery, retrieveRelevantSummaries } from "../search";
 import { transcriptToChatMessages } from "../transcript";
 import {
   buildErrorAssistantMessage,
@@ -81,12 +81,18 @@ export async function runStream(
     // a tool result that just executed.
     await rt.persistenceChain;
 
-    const relevantSummaries =
-      rt.currentTurnUserText.length > 0
-        ? await retrieveRelevantSummaries(rt.currentTurnUserText, {
-            sessionId: rt.input.sessionId,
-          })
-        : [];
+    // Embed the last user message grounded by the tail of the previous
+    // assistant turn (helps short / anaphoric follow-ups), and always anchor
+    // the result on the most-recent session summaries so a semantic miss can
+    // never wipe all prior context.
+    const retrievalQuery = buildRetrievalQuery(
+      rt.state.messages,
+      rt.currentTurnUserText,
+    );
+    const relevantSummaries = await retrieveRelevantSummaries(retrievalQuery, {
+      sessionId: rt.input.sessionId,
+      recentSummaries: rt.state.summaries,
+    });
 
     const liveMessages = getLiveMessages(rt.state.messages, rt.state.summaries);
     const transcriptForLlm = transcriptToChatMessages(

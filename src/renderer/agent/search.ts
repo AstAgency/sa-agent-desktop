@@ -1,31 +1,44 @@
 import { searchSummaries } from "../lib/api";
 import { getBridge } from "../lib/bridge";
-import type { SearchSummaryResult } from "../lib/types";
+import type { SearchSummaryResult, Summary } from "../lib/types";
+import { selectSummaries } from "./summary-selection";
+
+export { buildRetrievalQuery, selectSummaries } from "./summary-selection";
+export {
+  DISTANCE_THRESHOLD,
+  MIN_SEMANTIC_RESULTS,
+  RECENCY_ANCHOR,
+  RESULT_LIMIT,
+} from "./summary-selection";
 
 export const SEARCH_LIMIT = 10;
-export const RESULT_LIMIT = 5;
-export const DISTANCE_THRESHOLD = 0.3;
 
 export type RetrievalOptions = {
   sessionId?: string;
   limit?: number;
   distanceThreshold?: number;
+  /** Session summaries in chronological order; used for the recency anchor. */
+  recentSummaries?: Summary[];
 };
 
 export async function retrieveRelevantSummaries(
   text: string,
   options: RetrievalOptions = {},
 ): Promise<SearchSummaryResult[]> {
-  const embedding = await getBridge().python.embedQuery(text);
+  const query = text.trim();
+  if (query.length === 0) {
+    // No query to embed — still anchor on recency so context is never empty.
+    return selectSummaries({ results: [], recentSummaries: options.recentSummaries });
+  }
+  const embedding = await getBridge().python.embedQuery(query);
   const results = await searchSummaries({
     embedding,
     limit: options.limit ?? SEARCH_LIMIT,
     session_id: options.sessionId,
   });
-  const threshold = options.distanceThreshold ?? DISTANCE_THRESHOLD;
-  const filtered = results.filter((summary) => {
-    if (typeof summary.distance !== "number") return true;
-    return summary.distance < threshold;
+  return selectSummaries({
+    results,
+    recentSummaries: options.recentSummaries,
+    distanceThreshold: options.distanceThreshold,
   });
-  return filtered.slice(0, RESULT_LIMIT);
 }
