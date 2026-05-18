@@ -3,9 +3,9 @@
  * responsibility under `./controller/*`; this module re-exports the public
  * surface so existing import paths (`../state/controller`) stay stable.
  */
-import type { Message, Summary } from "../lib/types";
+import type { Message, Summary } from "../../lib/types";
 
-export { startPythonRuntime, bootstrap, refreshBilling } from "./controller/bootstrap";
+export { startPythonRuntime, bootstrap, refreshBilling } from "../controller/bootstrap";
 export {
   loadProjectSessions,
   createProjectAndSelect,
@@ -13,21 +13,21 @@ export {
   renameProject,
   removeProject,
   saveProjectMemory,
-} from "./controller/projects";
-export { saveGlobalMemory } from "./controller/memory";
+} from "../controller/projects";
+export { saveGlobalMemory } from "../controller/memory";
 export {
   renameSession,
   removeSession,
   deriveDisplayName,
-} from "./controller/sessions";
+} from "../controller/sessions";
 export {
   selectSession,
   startNewGlobalSession,
   startNewProjectSession,
   clearSelection,
   setSelectedAgent,
-} from "./controller/selection";
-export { sendMessage, abortActiveTurn } from "./controller/messaging";
-export { disposeRuntimes, getRuntime } from "./controller/registry";
+} from "../controller/selection";
+export { sendMessage, abortActiveTurn } from "../controller/messaging";
+export { disposeRuntimes, getRuntime } from "../controller/registry";
 
 export type { Message, Summary };
