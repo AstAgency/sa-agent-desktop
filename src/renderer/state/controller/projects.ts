@@ -1,0 +1,99 @@
+import {
+  createProject,
+  deleteProject as deleteProjectRequest,
+  getProjectSessions,
+  updateProject as updateProjectRequest,
+  updateProjectMemory,
+} from "../../lib/api";
+import { getState, setState } from "../store";
+import { disposeSessionRuntime } from "./registry";
+
+export async function loadProjectSessions(projectId: string) {
+  const sessions = await getProjectSessions(projectId);
+  setState((state) => ({
+    ...state,
+    projectSessions: { ...state.projectSessions, [projectId]: sessions },
+  }));
+}
+
+export async function createProjectAndSelect(input: { name: string; description?: string }) {
+  const project = await createProjectFromInput(input);
+  setState((state) => ({ ...state, selection: { kind: "new-project", projectId: project.id } }));
+  return project;
+}
+
+export async function createProjectViaTool(input: { name: string; description?: string }) {
+  return createProjectFromInput(input);
+}
+
+async function createProjectFromInput(input: { name: string; description?: string }) {
+  const projectKey = input.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || `project-${Date.now().toString(36)}`;
+  const project = await createProject({
+    name: input.name,
+    description: input.description ?? null,
+    project_key: projectKey,
+  });
+  setState((state) => ({
+    ...state,
+    projects: [...state.projects, project],
+    projectSessions: { ...state.projectSessions, [project.id]: [] },
+  }));
+  return project;
+}
+
+export async function renameProject(projectId: string, name: string) {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return;
+  const project = await updateProjectRequest(projectId, { name: trimmed });
+  setState((state) => ({
+    ...state,
+    projects: state.projects.map((existing) => (existing.id === projectId ? project : existing)),
+  }));
+}
+
+export async function removeProject(projectId: string) {
+  await deleteProjectRequest(projectId);
+  const stateBefore = getState();
+  const affectedSessionIds = (stateBefore.projectSessions[projectId] ?? []).map(
+    (session) => session.id,
+  );
+  setState((state) => {
+    const nextProjects = state.projects.filter((existing) => existing.id !== projectId);
+    const { [projectId]: _removed, ...nextProjectSessions } = state.projectSessions;
+    const selection = state.selection;
+    const selectionTouchesProject =
+      (selection.kind === "new-project" && selection.projectId === projectId) ||
+      (selection.kind === "session" && affectedSessionIds.includes(selection.sessionId));
+    const messagesBySession = { ...state.messagesBySession };
+    const summariesBySession = { ...state.summariesBySession };
+    for (const sessionId of affectedSessionIds) {
+      delete messagesBySession[sessionId];
+      delete summariesBySession[sessionId];
+    }
+    return {
+      ...state,
+      projects: nextProjects,
+      projectSessions: nextProjectSessions,
+      messagesBySession,
+      summariesBySession,
+      selection: selectionTouchesProject ? { kind: "none" } : state.selection,
+      streamingFinalText: selectionTouchesProject ? "" : state.streamingFinalText,
+      runtimeTrace: selectionTouchesProject ? [] : state.runtimeTrace,
+    };
+  });
+  for (const sessionId of affectedSessionIds) {
+    disposeSessionRuntime(sessionId);
+  }
+}
+
+export async function saveProjectMemory(projectId: string, content: string) {
+  const project = await updateProjectMemory(projectId, content);
+  setState((state) => ({
+    ...state,
+    projects: state.projects.map((existing) => (existing.id === projectId ? project : existing)),
+  }));
+}
