@@ -111,7 +111,7 @@ export function buildWorkspaceTools(
     name: "write_file",
     label: "Write file",
     description:
-      "Create or overwrite a UTF-8 text file in the current workspace. Parent directories are created automatically. Namespace paths are read-only.",
+      "Create or overwrite a UTF-8 text file. You can write ONLY inside the current session's own workspace: in a global session that is the global folder, in a project session that is only that project's folder. Parent directories are created automatically. Cross-scope namespace paths (global/<session-folder>/..., projects/<project-folder>/...) are read-only in every session — readable from both global and project sessions, but never writable or editable.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Path relative to workspace root" }),
@@ -131,7 +131,7 @@ export function buildWorkspaceTools(
     name: "edit_file",
     label: "Edit file",
     description:
-      "Replace text within an existing file in the current workspace. By default the substring must be unique; use replace_all to replace every occurrence. Namespace paths are read-only.",
+      "Replace text within an existing file. You can edit ONLY inside the current session's own workspace: in a global session that is the global folder, in a project session that is only that project's folder. By default the substring must be unique; use replace_all to replace every occurrence. Cross-scope namespace paths (global/<session-folder>/..., projects/<project-folder>/...) are read-only in every session — readable from both global and project sessions, but never writable or editable.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Path relative to workspace root" }),
