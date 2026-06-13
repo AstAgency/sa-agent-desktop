@@ -6,6 +6,7 @@ import { UserProfileModal } from "./components/UserProfileModal";
 import { translate } from "./lib/i18n";
 import { bootstrap, startPythonRuntime } from "./state/controller";
 import { initializeAuth } from "./state/auth-controller";
+import { applyClientUpdate, checkForClientUpdate } from "./state/update-controller";
 import { useClientState } from "./state/store";
 
 export function App() {
@@ -19,6 +20,7 @@ export function App() {
   const profileModalOpen = useClientState((state) => state.profileModalOpen);
   const authStatus = useClientState((state) => state.auth.status);
   const uiNotice = useClientState((state) => state.uiNotice);
+  const update = useClientState((state) => state.update);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -37,6 +39,12 @@ export function App() {
       void bootstrap();
     }
   }, [authStatus, status]);
+
+  useEffect(() => {
+    if (authStatus === "authenticated") {
+      void checkForClientUpdate();
+    }
+  }, [authStatus]);
 
   if (authStatus === "loading") {
     return (
@@ -96,6 +104,26 @@ export function App() {
       <Sidebar />
       <ChatView />
       {profileModalOpen ? <UserProfileModal /> : null}
+      {update.available ? (
+        <div className="update-banner" role="status" aria-live="polite">
+          <span className="update-banner__text">
+            {update.error
+              ? `${translate(language, "update.failed")}: ${update.error}`
+              : translate(language, "update.available")}
+          </span>
+          <button
+            className="update-banner__action"
+            disabled={update.applying}
+            onClick={() => {
+              void applyClientUpdate();
+            }}
+          >
+            {update.applying
+              ? translate(language, "update.applying")
+              : translate(language, "update.action")}
+          </button>
+        </div>
+      ) : null}
       {uiNotice ? <div className="app-toast" role="status" aria-live="polite">{uiNotice.message}</div> : null}
     </div>
   );

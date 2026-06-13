@@ -7,6 +7,8 @@ import type {
   ChatCompletionChunk,
   ChatCompletionRequest,
   ChatCompletionResponse,
+  ClientManifest,
+  ClientManifestFile,
   CreateProjectInput,
   CreateSessionInput,
   CreateSummaryInput,
@@ -129,6 +131,49 @@ async function request<T>(
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+// --- Client (renderer bundle) over-the-air updates -------------------------
+
+export async function getClientManifest(options?: RequestOptions): Promise<ClientManifest> {
+  return request<ClientManifest>("GET", "/v1/client/manifest", undefined, options);
+}
+
+function resolveClientFileUrl(manifest: ClientManifest, filePath: string): string {
+  const base = manifest.baseUrl.replace(/\/+$/, "");
+  const rel = filePath.replace(/^\/+/, "");
+  if (/^https?:\/\//i.test(base)) return `${base}/${rel}`;
+  const normalizedBase = base.startsWith("/") ? base : `/${base}`;
+  return `${getBackendUrl()}${normalizedBase}/${rel}`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// Download a single bundle file and return it base64-encoded so it can be
+// handed to the main process over IPC. Absolute (CDN) URLs are fetched plainly;
+// backend-relative ones go through the authenticated fetch.
+export async function downloadClientFile(
+  manifest: ClientManifest,
+  file: ClientManifestFile,
+  options?: RequestOptions,
+): Promise<string> {
+  const url = resolveClientFileUrl(manifest, file.path);
+  const useAuth = !/^https?:\/\//i.test(manifest.baseUrl);
+  const response = useAuth
+    ? await fetchWithAuth(url, { method: "GET", signal: options?.signal })
+    : await fetch(url, { signal: options?.signal });
+  if (!response.ok) {
+    throw new Error(`${response.status} GET ${file.path}`);
+  }
+  return arrayBufferToBase64(await response.arrayBuffer());
 }
 
 type ApiErrorDetails = {

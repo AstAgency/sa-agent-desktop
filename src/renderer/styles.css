@@ -1522,6 +1522,46 @@ details > summary:hover .row-kebab {
   text-align: center;
 }
 
+.update-banner {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 10px 8px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, black);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.update-banner__text {
+  flex: 1 1 auto;
+}
+
+.update-banner__action {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update-banner__action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .inline-link {
   background: none;
   border: none;

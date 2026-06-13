@@ -45,6 +45,9 @@ type DialogOpenFileResult = {
   content: string;
 };
 
+type RendererUpdateFile = { path: string; base64: string; hash: string };
+type RendererUpdatePayload = { version: string; files: RendererUpdateFile[] };
+
 async function unwrap<T>(invocation: Promise<IpcEnvelope<T>>): Promise<T> {
   const result = await invocation;
   if (!result || typeof result !== "object") {
@@ -149,6 +152,14 @@ contextBridge.exposeInMainWorld("saAgent", {
   dialog: {
     openFiles(): Promise<DialogOpenFileResult[]> {
       return unwrap(ipcRenderer.invoke("sa-agent:dialog-open-files"));
+    },
+  },
+  update: {
+    installedVersion(): Promise<string> {
+      return ipcRenderer.invoke("sa-agent:client-installed-version") as Promise<string>;
+    },
+    apply(payload: RendererUpdatePayload): Promise<{ version: string }> {
+      return unwrap(ipcRenderer.invoke("sa-agent:client-apply-update", payload));
     },
   },
 });

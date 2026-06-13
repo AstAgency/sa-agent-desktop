@@ -3,6 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApplicationMenuTemplate } from "./application-menu.js";
+import {
+  RENDERER_ENTRY_URL,
+  applyRendererUpdate,
+  getInstalledRendererVersion,
+  registerRendererProtocol,
+  registerRendererSchemePrivileges,
+  type RendererUpdatePayload,
+} from "./renderer-cache.js";
 import { PythonRuntime, resolvePythonRuntimePaths } from "./python-runtime.js";
 import { SearxngRuntime } from "./searxng-runtime.js";
 import { fetchUrl } from "./net/http-fetcher.js";
@@ -35,6 +43,10 @@ if (testUserDataDir) {
 
 const pythonRuntime = new PythonRuntime(resolvePythonRuntimePaths());
 const searxngRuntime = new SearxngRuntime();
+
+// Must run before `app.whenReady()` so the renderer scheme behaves like a
+// standard secure origin (fetch/module scripts/etc.).
+registerRendererSchemePrivileges();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -75,7 +87,9 @@ function createWindow() {
       console.error("[renderer] loadURL failed:", error);
     });
   } else {
-    void window.loadFile(path.join(rendererDistPath, "index.html"));
+    void window.loadURL(RENDERER_ENTRY_URL).catch((error) => {
+      console.error("[renderer] loadURL failed:", error);
+    });
   }
 }
 
@@ -148,6 +162,7 @@ function ipcResult<T>(handler: () => Promise<T>): Promise<{ ok: true; value: T }
 }
 
 app.whenReady().then(async () => {
+  registerRendererProtocol(rendererDistPath);
   configureApplicationBranding();
   installApplicationMenu();
   const userAgent = `SA-AgentDesktop/${app.getVersion()} (+https://github.com/AstAgency/sa-agent-desktop)`;
@@ -349,6 +364,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("sa-agent:dialog-open-files", () =>
     ipcResult(async () => openFilesDialog()),
+  );
+
+  ipcMain.handle("sa-agent:client-installed-version", () => getInstalledRendererVersion());
+
+  ipcMain.handle("sa-agent:client-apply-update", (_event, payload: unknown) =>
+    ipcResult(async () => applyRendererUpdate(payload as RendererUpdatePayload)),
   );
 
   pythonRuntime.start().catch((error) => {

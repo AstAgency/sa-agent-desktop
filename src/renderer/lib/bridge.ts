@@ -52,7 +52,14 @@ type Bridge = {
   dialog: {
     openFiles: () => Promise<DialogOpenFileResult[]>;
   };
+  update: {
+    installedVersion: () => Promise<string>;
+    apply: (payload: RendererUpdatePayload) => Promise<{ version: string }>;
+  };
 };
+
+export type RendererUpdateFile = { path: string; base64: string; hash: string };
+export type RendererUpdatePayload = { version: string; files: RendererUpdateFile[] };
 
 declare global {
   interface Window {

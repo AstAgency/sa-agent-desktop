@@ -51,6 +51,10 @@ const dictionaries = {
     "boot.failed": "Failed to bootstrap",
     "boot.pythonStarting": "Starting local Python runtime",
     "boot.retry": "Retry",
+    "update.available": "A new version is available.",
+    "update.action": "Update",
+    "update.applying": "Updating…",
+    "update.failed": "Update failed",
     "auth.title": "Sign in",
     "auth.subtitle": "Enter your email to receive a one-time code.",
     "auth.hero.subtitle":
@@ -230,6 +234,10 @@ const dictionaries = {
     "boot.failed": "Не удалось загрузиться",
     "boot.pythonStarting": "Запуск локального Python-рантайма",
     "boot.retry": "Повторить",
+    "update.available": "Доступна новая версия.",
+    "update.action": "Обновить",
+    "update.applying": "Обновление…",
+    "update.failed": "Не удалось обновить",
     "auth.title": "Вход",
     "auth.subtitle": "Введите email — мы пришлём одноразовый код.",
     "auth.hero.subtitle":

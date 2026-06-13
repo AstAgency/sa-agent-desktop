@@ -296,3 +296,23 @@ export type SearchStatus =
   | { state: "running"; port: number; pid: number | null }
   | { state: "unsupported"; reason: string }
   | { state: "failed"; error: string };
+
+export type ClientManifestFile = {
+  /** Path relative to the renderer bundle root, e.g. `assets/index-abc.js`. */
+  path: string;
+  /** Lowercase hex sha256 of the file bytes. */
+  hash: string;
+  size?: number;
+};
+
+export type ClientManifest = {
+  /** Version id of the latest renderer bundle. */
+  version: string;
+  /**
+   * Where the files live. Absolute (`https://cdn/.../`) is fetched directly;
+   * a backend-relative path (`/v1/client/0.4.0`) is resolved against the
+   * configured backend URL and fetched with auth. Each file is `baseUrl/path`.
+   */
+  baseUrl: string;
+  files: ClientManifestFile[];
+};

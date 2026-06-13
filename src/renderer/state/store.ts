@@ -76,6 +76,17 @@ export type ClientState = {
   billing: Billing | null;
   lastStreamError: LastStreamError | null;
   uiNotice: { id: number; message: string } | null;
+  update: UpdateSlice;
+};
+
+export type UpdateSlice = {
+  /** A newer renderer bundle is available and waiting for the user to apply it. */
+  available: boolean;
+  /** Version offered by the backend manifest. */
+  version: string | null;
+  /** Currently downloading/installing the update. */
+  applying: boolean;
+  error: string | null;
 };
 
 const SETTINGS_KEY = "sa-agent.settings";
@@ -131,6 +142,7 @@ const initialState: ClientState = {
   billing: null,
   lastStreamError: null,
   uiNotice: null,
+  update: { available: false, version: null, applying: false, error: null },
 };
 
 function persistSettings(state: ClientState) {
@@ -195,6 +207,10 @@ export function setBilling(billing: Billing | null) {
 
 export function setLastStreamError(lastStreamError: LastStreamError | null) {
   setState((state) => ({ ...state, lastStreamError }));
+}
+
+export function setUpdateState(partial: Partial<UpdateSlice>) {
+  setState((state) => ({ ...state, update: { ...state.update, ...partial } }));
 }
 
 export function showUiNotice(message: string, durationMs = 2800) {
