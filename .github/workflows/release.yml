@@ -1,19 +1,126 @@
 name: Release
 
+# Manual release with an automatic version bump.
+#   - "bundle" (always): builds the renderer and ships it to the backend's
+#     CLIENT_BUNDLE_DIR over SSH, where it is served via /v1/client/manifest
+#     for over-the-air UI updates.
+#   - "installers" (opt-in): the heavy electron build (bundled Python + model),
+#     attached to a GitHub Release. Only needed when the binary itself changes.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump for package.json"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      installers:
+        description: "Also build & publish desktop installers"
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  # Bump package.json, tag vX.Y.Z and push both to main. The tag is the single
+  # source of truth the build/publish jobs check out.
+  version:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Bump, commit and tag
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version "${{ inputs.bump }}" -m "chore(release): %s"
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          git push origin HEAD:main --follow-tags
+
+  # Lightweight OTA bundle: build only the renderer and rsync it to the host.
+  publish-bundle:
+    name: Publish renderer bundle
+    needs: version
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
+          VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || secrets.VITE_AUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VITE_API_BASE_URL}" ]] || { echo "Missing VITE_API_BASE_URL"; exit 1; }
+          [[ -n "${VITE_AUTH_BASE_URL}" ]] || { echo "Missing VITE_AUTH_BASE_URL"; exit 1; }
+          npm run typecheck:renderer
+          npx vite build
+          # Version marker the backend manifest reports (matches the desktop tag).
+          printf '%s' "${{ needs.version.outputs.version }}" > dist/version
+
+      - name: Deploy bundle over SSH (atomic swap)
+        env:
+          SSH_HOST: ${{ secrets.BUNDLE_SSH_HOST }}
+          SSH_USER: ${{ secrets.BUNDLE_SSH_USER }}
+          SSH_KEY: ${{ secrets.BUNDLE_SSH_KEY }}
+          BUNDLE_BASE: ${{ vars.BUNDLE_DEPLOY_BASE }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          : "${SSH_HOST:?}"; : "${SSH_USER:?}"; : "${SSH_KEY:?}"; : "${BUNDLE_BASE:?}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes"
+          TARGET="$BUNDLE_BASE/releases/$VERSION"
+          $SSH "$SSH_USER@$SSH_HOST" "mkdir -p '$TARGET'"
+          rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:$TARGET/"
+          # Atomically repoint the symlink the backend's CLIENT_BUNDLE_DIR follows.
+          $SSH "$SSH_USER@$SSH_HOST" \
+            "ln -sfn '$TARGET' '$BUNDLE_BASE/current.tmp' && mv -Tf '$BUNDLE_BASE/current.tmp' '$BUNDLE_BASE/current'"
+
+  # Heavy desktop installers (opt-in). Attached to a GitHub Release.
+  build-installers:
     name: Build ${{ matrix.label }}
+    needs: version
+    if: ${{ inputs.installers }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     environment: prod
@@ -29,20 +136,16 @@ jobs:
             label: macOS (Intel)
             artifact_name: installers-macos-x64
             artifact_glob: release/*.zip
-          # - os: ubuntu-latest
-          #   label: Linux
-          #   artifact_name: installers-linux
-          #   artifact_glob: |
-          #     release/*.tar.gz
-          #     release/*.deb
           - os: windows-2025
             label: Windows
             artifact_name: installers-windows
             artifact_glob: release/*.zip
 
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Enable long paths (Windows)
         if: runner.os == 'Windows'
@@ -58,29 +161,6 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Validate tag matches package version
-        shell: bash
-        run: |
-          set -euo pipefail
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          EXPECTED_TAG="v${PACKAGE_VERSION}"
-          if [[ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${PACKAGE_VERSION}" >&2
-            exit 1
-          fi
-
-      - name: Free disk space (Linux)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Install dependencies
         run: npm ci
 
@@ -93,6 +173,18 @@ jobs:
           set -euo pipefail
           [[ -n "${VITE_API_BASE_URL}" ]] || { echo "Missing VITE_API_BASE_URL in prod environment"; exit 1; }
           [[ -n "${VITE_AUTH_BASE_URL}" ]] || { echo "Missing VITE_AUTH_BASE_URL in prod environment"; exit 1; }
+
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
       - name: Build bundled Python runtime
         run: npm run python:build
@@ -111,9 +203,9 @@ jobs:
           ELECTRON_BUILDER_CACHE: ./.cache/electron-builder
         run: npm run dist
 
-      - name: Upload installers
-        uses: actions/upload-artifact@v4
+      - name: Publish installers to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_glob }}
-          if-no-files-found: error
+          tag_name: ${{ needs.version.outputs.tag }}
+          files: ${{ matrix.artifact_glob }}
+          fail_on_unmatched_files: true
