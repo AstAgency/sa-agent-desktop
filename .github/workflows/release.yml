@@ -99,16 +99,26 @@ jobs:
           SSH_HOST: ${{ secrets.BUNDLE_SSH_HOST }}
           SSH_USER: ${{ secrets.BUNDLE_SSH_USER }}
           SSH_KEY: ${{ secrets.BUNDLE_SSH_KEY }}
+          SSH_PORT: ${{ secrets.BUNDLE_SSH_PORT || '22' }}
           BUNDLE_BASE: ${{ vars.BUNDLE_DEPLOY_BASE }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           : "${SSH_HOST:?}"; : "${SSH_USER:?}"; : "${SSH_KEY:?}"; : "${BUNDLE_BASE:?}"
+          PORT="${SSH_PORT:-22}"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes"
+
+          echo "Probing ${SSH_HOST}:${PORT} ..."
+          if ! timeout 10 bash -c "exec 3<>/dev/tcp/${SSH_HOST}/${PORT}" 2>/dev/null; then
+            echo "::error::Runner cannot reach ${SSH_HOST}:${PORT}. Check BUNDLE_SSH_HOST / BUNDLE_SSH_PORT and that SSH is reachable from GitHub runners."
+            exit 1
+          fi
+
+          ssh-keyscan -p "$PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts \
+            || { echo "::error::ssh-keyscan failed for ${SSH_HOST}:${PORT}"; exit 1; }
+          SSH="ssh -i ~/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=yes"
           TARGET="$BUNDLE_BASE/releases/$VERSION"
           $SSH "$SSH_USER@$SSH_HOST" "mkdir -p '$TARGET'"
           rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:$TARGET/"
